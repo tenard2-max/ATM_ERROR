@@ -1,4 +1,4 @@
-import { BAR_COLORS } from "./config.js?v=20260703-11";
+import { BAR_COLORS } from "./config.js?v=20260703-12";
 
 export function renderBarChart(el, labels, values, title, xTitle = "장애건수") {
   const colors = labels.map((_, i) => BAR_COLORS[i % BAR_COLORS.length]);

@@ -239,7 +239,29 @@ pre { background: #edf2f7; padding: 12px; border-radius: 8px; overflow: auto; }
   cursor: pointer;
 }
 
-.nav-actions { margin-top: 24px; }
+.nav-actions { margin: 0; }
+.nav-dock {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 100;
+  background: rgba(255, 255, 255, 0.98);
+  border-top: 2px solid var(--border);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.12);
+  padding: 12px 0 calc(12px + env(safe-area-inset-bottom, 0px));
+}
+.nav-dock .nav-actions {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 20px;
+  border: none;
+  box-shadow: none;
+  background: transparent;
+}
+body.has-nav-dock .wrap#app {
+  padding-bottom: 140px;
+}
 .nav-actions label { display: block; margin-bottom: 12px; }
 .nav-btn-row {
   display: flex;

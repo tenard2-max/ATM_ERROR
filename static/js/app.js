@@ -1,4 +1,4 @@
-import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-11";
+import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-12";
 import {
   attachBranchName,
   computePriority,
@@ -11,8 +11,8 @@ import {
   monthlyCounts,
   monthlyTrend,
   topNByMonth,
-} from "./analyzer.js?v=20260703-11";
-import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-11";
+} from "./analyzer.js?v=20260703-12";
+import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-12";
 import {
   applyMapping,
   clearExtraRows,
@@ -21,7 +21,7 @@ import {
   initStore,
   loadMapping,
   replaceMonthRows,
-} from "./store.js?v=20260703-11";
+} from "./store.js?v=20260703-12";
 
 const state = { page: "compare", params: new URLSearchParams() };
 
@@ -131,7 +131,7 @@ function renderNavActions({ month, navType, options, selectedValue }) {
     .join("");
   return `
     <section class="card nav-actions" data-nav-month="${esc(month)}" data-nav-type="${esc(navType)}">
-      <h3>선택 항목 → 다른 화면 이동</h3>
+      <h3>다음 단계로 이동</h3>
       <label>${esc(navType)} 선택
         <select class="nav-entity-select">${optsHtml}</select>
       </label>
@@ -144,6 +144,32 @@ function renderNavActions({ month, navType, options, selectedValue }) {
   `;
 }
 
+function renderNavFromSession() {
+  try {
+    const raw = sessionStorage.getItem(NAV_STORAGE_KEY);
+    if (!raw) return "";
+    const { type, value, month } = JSON.parse(raw);
+    if (!month || !value || !type) return "";
+    return renderNavActions({ month, navType: type, options: [value], selectedValue: value });
+  } catch {
+    return "";
+  }
+}
+
+function mountNavDock() {
+  const dock = document.getElementById("nav-dock");
+  if (!dock) return;
+  const section = document.querySelector("#app .nav-actions");
+  if (section) {
+    dock.replaceChildren(section);
+    dock.hidden = false;
+    document.body.classList.add("has-nav-dock");
+  } else {
+    dock.replaceChildren();
+    dock.hidden = true;
+    document.body.classList.remove("has-nav-dock");
+  }
+}
 function bindNavActions() {
   document.querySelectorAll(".nav-actions").forEach((section) => {
     const month = section.dataset.navMonth;
@@ -733,6 +759,7 @@ function renderData() {
     </form>
     <button id="clear-extra" class="secondary" type="button">브라우저 추가 데이터 초기화</button>
     <p id="upload-msg" class="caption"></p>
+    ${renderNavFromSession()}
   `;
 }
 
@@ -839,7 +866,6 @@ function bindForms() {
     document.getElementById("upload-msg").textContent = "브라우저 추가 데이터를 초기화했습니다.";
     render();
   });
-  bindNavActions();
 }
 
 async function loadBuildLabel() {
@@ -866,7 +892,9 @@ function render() {
   };
   const fn = views[state.page] || views.compare;
   app.innerHTML = fn();
+  mountNavDock();
   bindForms();
+  bindNavActions();
   loadBuildLabel().then((build) => {
     const meta = getMeta();
     const buildLabel = build ? ` · build ${build}` : "";
