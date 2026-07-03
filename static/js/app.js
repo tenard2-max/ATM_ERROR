@@ -1,4 +1,4 @@
-import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-26";
+import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-27";
 import {
   attachBranchName,
   computePriority,
@@ -18,15 +18,15 @@ import {
   monthlyTrend,
   primaryBranchForDevice,
   topNByMonth,
-} from "./analyzer.js?v=20260703-26";
-import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-26";
+} from "./analyzer.js?v=20260703-27";
+import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-27";
 import {
   changePassword,
   ensureDefaultPasswordHash,
   isAuthenticated,
   setAuthenticated,
   verifyPassword,
-} from "./auth.js?v=20260703-26";
+} from "./auth.js?v=20260703-27";
 import {
   applyMapping,
   clearExtraRows,
@@ -35,7 +35,7 @@ import {
   initStore,
   loadMapping,
   replaceMonthRows,
-} from "./store.js?v=20260703-26";
+} from "./store.js?v=20260703-27";
 
 const state = { page: "compare", params: new URLSearchParams() };
 let appStarted = false;
@@ -1038,15 +1038,119 @@ function renderData() {
     </div>
     <p class="caption">월: ${esc(meta.months.join(", ") || "-")}</p>
     <form id="upload-form" class="card">
-      <label>장애리스트 Excel 업로드 (.xlsx)
-        <input type="file" id="upload-file" accept=".xlsx,.xls">
-      </label>
+      <label class="upload-label">장애리스트 Excel 업로드 (.xlsx)</label>
+      <div id="upload-dropzone" class="upload-dropzone" tabindex="0" role="button" aria-label="Excel 파일 업로드">
+        <p class="upload-dropzone-title">📂 파일을 여기에 끌어다 놓으세요</p>
+        <p class="caption">또는 클릭하여 선택 · .xlsx / .xls</p>
+        <p id="upload-filename" class="upload-filename"></p>
+        <input type="file" id="upload-file" accept=".xlsx,.xls" hidden>
+      </div>
       <button type="submit">업로드·적재</button>
     </form>
     <button id="clear-extra" class="secondary" type="button">브라우저 추가 데이터 초기화</button>
     <p id="upload-msg" class="caption"></p>
     ${renderNavFromSession()}
   `;
+}
+
+async function processUploadFile(file, msgEl) {
+  if (!file) {
+    if (msgEl) msgEl.textContent = "파일을 선택하세요.";
+    return false;
+  }
+  if (!/\.xlsx?$/i.test(file.name)) {
+    if (msgEl) msgEl.textContent = "Excel 파일(.xlsx, .xls)만 업로드할 수 있습니다.";
+    return false;
+  }
+  try {
+    const mapping = await loadMapping();
+    const buffer = await file.arrayBuffer();
+    const wb = XLSX.read(buffer, { type: "array" });
+    const sheet = wb.Sheets[wb.SheetNames[0]];
+    const raw = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    const required = ["점번", "지점명", "기번", "기종", "발생일자", "세부장애", "장애내용"];
+    for (const col of required) {
+      if (!(col in (raw[0] || {}))) throw new Error(`필수 컬럼 누락: ${col}`);
+    }
+    let rows = raw.map((r) => {
+      const d = new Date(r.발생일자);
+      const 연월 = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      return {
+        연월,
+        점번: String(r.점번),
+        지점명: String(r.지점명),
+        기번: String(r.기번),
+        기종: String(r.기종),
+        발생일자: String(r.발생일자).slice(0, 10),
+        세부장애: String(r.세부장애),
+        장애내용: String(r.장애내용),
+        장애코드2: String(r.장애코드2 || ""),
+      };
+    });
+    rows = applyMapping(rows, mapping);
+    const month = rows[0]?.연월;
+    replaceMonthRows(month, rows);
+    if (msgEl) msgEl.textContent = `${file.name} — ${month} ${rows.length.toLocaleString()}건 저장 (브라우저)`;
+    render();
+    return true;
+  } catch (err) {
+    if (msgEl) msgEl.textContent = err.message || String(err);
+    return false;
+  }
+}
+
+function setUploadInputFile(input, file) {
+  const dt = new DataTransfer();
+  dt.items.add(file);
+  input.files = dt.files;
+}
+
+function bindUploadDropzone() {
+  const form = document.getElementById("upload-form");
+  const input = document.getElementById("upload-file");
+  const zone = document.getElementById("upload-dropzone");
+  const nameEl = document.getElementById("upload-filename");
+  const msg = document.getElementById("upload-msg");
+  if (!form || !input || !zone) return;
+
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    await processUploadFile(input.files[0], msg);
+  });
+
+  zone.addEventListener("click", () => input.click());
+  zone.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      input.click();
+    }
+  });
+
+  input.addEventListener("change", () => {
+    if (nameEl) nameEl.textContent = input.files[0]?.name || "";
+  });
+
+  for (const evt of ["dragenter", "dragover"]) {
+    zone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      zone.classList.add("drag-over");
+    });
+  }
+  for (const evt of ["dragleave", "drop"]) {
+    zone.addEventListener(evt, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      zone.classList.remove("drag-over");
+    });
+  }
+  zone.addEventListener("drop", async (e) => {
+    const file = e.dataTransfer?.files?.[0];
+    if (!file) return;
+    setUploadInputFile(input, file);
+    if (nameEl) nameEl.textContent = file.name;
+    await processUploadFile(file, msg);
+  });
 }
 
 function bindForms() {
@@ -1118,48 +1222,7 @@ function bindForms() {
     params.fault_view = target.value;
     setRoute("code", params);
   });
-  document.getElementById("upload-form")?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    const msg = document.getElementById("upload-msg");
-    const file = document.getElementById("upload-file").files[0];
-    if (!file) {
-      msg.textContent = "파일을 선택하세요.";
-      return;
-    }
-    try {
-      const mapping = await loadMapping();
-      const buffer = await file.arrayBuffer();
-      const wb = XLSX.read(buffer, { type: "array" });
-      const sheet = wb.Sheets[wb.SheetNames[0]];
-      const raw = XLSX.utils.sheet_to_json(sheet, { defval: "" });
-      const required = ["점번", "지점명", "기번", "기종", "발생일자", "세부장애", "장애내용"];
-      for (const col of required) {
-        if (!(col in (raw[0] || {}))) throw new Error(`필수 컬럼 누락: ${col}`);
-      }
-      let rows = raw.map((r) => {
-        const d = new Date(r.발생일자);
-        const 연월 = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-        return {
-          연월,
-          점번: String(r.점번),
-          지점명: String(r.지점명),
-          기번: String(r.기번),
-          기종: String(r.기종),
-          발생일자: String(r.발생일자).slice(0, 10),
-          세부장애: String(r.세부장애),
-          장애내용: String(r.장애내용),
-          장애코드2: String(r.장애코드2 || ""),
-        };
-      });
-      rows = applyMapping(rows, mapping);
-      const month = rows[0]?.연월;
-      replaceMonthRows(month, rows);
-      msg.textContent = `${file.name} — ${month} ${rows.length.toLocaleString()}건 저장 (브라우저)`;
-      render();
-    } catch (err) {
-      msg.textContent = err.message || String(err);
-    }
-  });
+  bindUploadDropzone();
   document.getElementById("clear-extra")?.addEventListener("click", () => {
     clearExtraRows();
     document.getElementById("upload-msg").textContent = "브라우저 추가 데이터를 초기화했습니다.";

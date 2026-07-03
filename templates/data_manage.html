@@ -24,10 +24,14 @@
 <div class="grid-2">
   <section class="card">
     <h3>업로드</h3>
-    <form method="post" enctype="multipart/form-data">
+    <form method="post" enctype="multipart/form-data" id="server-upload-form">
       <input type="hidden" name="action" value="upload">
-      <input type="file" name="files" accept=".xls,.xlsx" multiple>
-      <p class="caption">최대 {{ max_upload_files }}개(12개월) · .xls / .xlsx</p>
+      <div id="server-upload-dropzone" class="upload-dropzone" tabindex="0" role="button" aria-label="Excel 파일 업로드">
+        <p class="upload-dropzone-title">📂 파일을 여기에 끌어다 놓으세요</p>
+        <p class="caption">또는 클릭하여 선택 · .xls / .xlsx · 최대 {{ max_upload_files }}개</p>
+        <p id="server-upload-filename" class="upload-filename"></p>
+        <input type="file" id="server-upload-file" name="files" accept=".xls,.xlsx" multiple hidden>
+      </div>
       <button type="submit">업로드 처리</button>
     </form>
   </section>
@@ -203,4 +207,47 @@
     </form>
   {% endif %}
 </section>
+<script>
+  (function () {
+    const zone = document.getElementById("server-upload-dropzone");
+    const input = document.getElementById("server-upload-file");
+    const nameEl = document.getElementById("server-upload-filename");
+    if (!zone || !input) return;
+
+    zone.addEventListener("click", () => input.click());
+    zone.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        input.click();
+      }
+    });
+    input.addEventListener("change", () => {
+      if (!nameEl) return;
+      const names = [...input.files].map((f) => f.name);
+      nameEl.textContent = names.length ? names.join(", ") : "";
+    });
+    for (const evt of ["dragenter", "dragover"]) {
+      zone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        zone.classList.add("drag-over");
+      });
+    }
+    for (const evt of ["dragleave", "drop"]) {
+      zone.addEventListener(evt, (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        zone.classList.remove("drag-over");
+      });
+    }
+    zone.addEventListener("drop", (e) => {
+      const files = [...(e.dataTransfer?.files || [])].filter((f) => /\.xlsx?$/i.test(f.name));
+      if (!files.length) return;
+      const dt = new DataTransfer();
+      files.forEach((f) => dt.items.add(f));
+      input.files = dt.files;
+      if (nameEl) nameEl.textContent = files.map((f) => f.name).join(", ");
+    });
+  })();
+</script>
 {% endblock %}

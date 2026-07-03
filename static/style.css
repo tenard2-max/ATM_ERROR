@@ -291,3 +291,29 @@ body.has-nav-dock .wrap#app {
 .login-form { display: flex; flex-direction: column; gap: 12px; margin-top: 16px; text-align: left; }
 .login-form input[type="password"] { width: 100%; padding: 10px 12px; font-size: 1rem; }
 .login-form button { width: 100%; padding: 12px; font-size: 1rem; }
+
+.upload-label { display: block; font-weight: 600; margin-bottom: 10px; }
+.upload-dropzone {
+  border: 2px dashed var(--border);
+  border-radius: 12px;
+  padding: 28px 20px;
+  text-align: center;
+  background: #f8fafc;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+  margin-bottom: 14px;
+}
+.upload-dropzone:hover,
+.upload-dropzone:focus-visible {
+  border-color: var(--primary-light);
+  background: #edf2f7;
+  outline: none;
+}
+.upload-dropzone.drag-over {
+  border-color: var(--primary);
+  background: #e6fffa;
+  box-shadow: inset 0 0 0 1px var(--primary-light);
+}
+.upload-dropzone-title { margin: 0 0 6px; font-weight: 600; font-size: 1.05rem; }
+.upload-filename { margin: 10px 0 0; font-size: 0.92rem; color: var(--primary); word-break: break-all; }
+#upload-form button[type="submit"] { margin-top: 4px; }
