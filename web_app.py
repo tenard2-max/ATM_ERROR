@@ -986,7 +986,7 @@ def priority():
             top10_bar_figure(
                 chart_df,
                 "기번",
-                f"위험도 TOP{len(ranked)} (기번)",
+                f"위험도 TOP{len(ranked)} (기번 · 지점)",
                 suffix_col="지점명",
             )
         )

@@ -6,6 +6,7 @@ import {
   distribution,
   drilldown,
   entityOptions,
+  formatDeviceLabel,
   getMonths,
   monthlyCounts,
   monthlyTrend,
@@ -675,7 +676,7 @@ function renderCode() {
 }
 
 function deviceWithBranch(row) {
-  return row.지점명 ? `${row.기번} (${row.지점명})` : row.기번;
+  return row.기번표시 || formatDeviceLabel(row.기번, row.지점명);
 }
 
 function renderPriority() {
@@ -683,12 +684,14 @@ function renderPriority() {
   const ranked = computePriority(rows);
   if (!ranked.length) return `<div class="alert warn">데이터가 없습니다.</div>`;
 
+  const chartLabels = ranked.map((r) => deviceWithBranch(r)).reverse();
+
   queueMicrotask(() => {
     renderBarChart(
       document.getElementById("chart-priority"),
-      ranked.map((r) => deviceWithBranch(r)).reverse(),
+      chartLabels,
       ranked.map((r) => Math.round(r.위험도점수)).reverse(),
-      `위험도 TOP${ranked.length} (기번)`,
+      `위험도 TOP${ranked.length} (기번 · 지점)`,
       "위험도",
     );
   });
@@ -697,8 +700,7 @@ function renderPriority() {
     <h2>🎯 중점장애관리</h2>
     <div id="chart-priority" class="chart-box"></div>
     ${tableHtml(ranked, [
-      { key: "기번", label: "기번" },
-      { key: "지점명", label: "지점" },
+      { key: "기번표시", label: "기번 (지점)" },
       { key: "기종", label: "기종" },
       { key: "최근3개월건수", label: "최근3개월" },
       { key: "전월대비증가율", label: "증가율(%)" },

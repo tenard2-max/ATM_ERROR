@@ -55,6 +55,32 @@ export function attachBranchName(rows, topRows, month, deviceCol = "기번", bra
   }));
 }
 
+function branchCountsByDevice(rows, deviceCol = "기번", branchCol = "지점명") {
+  const map = new Map();
+  for (const row of rows) {
+    const id = String(row[deviceCol] ?? "");
+    if (!id) continue;
+    if (!map.has(id)) map.set(id, new Map());
+    const branch = String(row[branchCol] ?? "").trim();
+    if (!branch) continue;
+    const counts = map.get(id);
+    counts.set(branch, (counts.get(branch) || 0) + 1);
+  }
+  return map;
+}
+
+export function primaryBranchForDevice(rows, deviceId, deviceCol = "기번", branchCol = "지점명") {
+  const counts = branchCountsByDevice(rows, deviceCol, branchCol).get(String(deviceId));
+  if (!counts?.size) return "";
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+}
+
+export function formatDeviceLabel(deviceId, branchName) {
+  const id = String(deviceId ?? "");
+  const branch = String(branchName ?? "").trim();
+  return branch ? `${id} (${branch})` : id;
+}
+
 export function dailyTrend(rows, month, entityCol, entities) {
   const [year, mon] = month.split("-").map(Number);
   const lastDay = new Date(year, mon, 0).getDate();
@@ -111,11 +137,12 @@ export function computePriority(rows, topN = PRIORITY_TOP_N) {
   const deviceCounts = monthlyCounts(rows, "기번");
   const meta = new Map();
   for (const row of rows) {
-    if (!meta.has(row.기번)) meta.set(row.기번, { 기종: row.기종, 지점명: row.지점명 });
+    if (!meta.has(row.기번)) meta.set(row.기번, row.기종);
   }
 
   const scoreMap = new Map();
-  for (const [기번, info] of meta.entries()) {
+  for (const [기번, 기종] of meta.entries()) {
+    const 지점명 = primaryBranchForDevice(rows, 기번);
     const recentSum = deviceCounts
       .filter((r) => r.기번 === 기번 && recent.includes(r.연월))
       .reduce((s, r) => s + r.장애건수, 0);
@@ -126,8 +153,9 @@ export function computePriority(rows, topN = PRIORITY_TOP_N) {
     const growth = prevCount > 0 ? ((cur - prevCount) / prevCount) * 100 : 0;
     scoreMap.set(기번, {
       기번,
-      기종: info.기종,
-      지점명: info.지점명,
+      기종,
+      지점명,
+      기번표시: formatDeviceLabel(기번, 지점명),
       최근3개월건수: recentSum,
       전월대비증가율: growth,
       위험도점수: recentSum * 0.4 + Math.max(growth, 0) * 0.3 + cur * 0.3,
