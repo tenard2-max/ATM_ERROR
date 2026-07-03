@@ -1,24 +1,32 @@
-import { BAR_COLORS } from "./config.js?v=20260703-12";
+import { BAR_COLORS } from "./config.js?v=20260703-16";
 
 export function renderBarChart(el, labels, values, title, xTitle = "장애건수") {
-  const colors = labels.map((_, i) => BAR_COLORS[i % BAR_COLORS.length]);
-  const maxLen = Math.max(...labels.map((l) => String(l).length), 10);
+  if (!el || !labels.length) return;
+  const yLabels = labels.map((l) => String(l ?? ""));
+  const colors = yLabels.map((_, i) => BAR_COLORS[i % BAR_COLORS.length]);
   const trace = {
     type: "bar",
     orientation: "h",
     x: values,
-    y: labels,
+    y: yLabels,
     text: values.map((v) => v.toLocaleString()),
     textposition: "outside",
+    cliponaxis: false,
     marker: { color: colors },
   };
   const layout = {
     title,
-    height: Math.max(320, labels.length * 42),
-    margin: { l: Math.min(320, Math.max(100, maxLen * 7)), r: 40, t: 50, b: 40 },
-    xaxis: { title: xTitle },
-    yaxis: { categoryorder: "total ascending" },
+    height: Math.max(360, yLabels.length * 44 + 80),
+    margin: { l: 40, r: 72, t: 56, b: 48 },
+    xaxis: { title: xTitle, rangemode: "tozero" },
+    yaxis: {
+      type: "category",
+      categoryorder: "total ascending",
+      automargin: true,
+      title: "",
+    },
     showlegend: false,
+    bargap: 0.25,
   };
   Plotly.newPlot(el, [trace], layout, { responsive: true, displayModeBar: false });
 }

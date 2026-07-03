@@ -1,4 +1,4 @@
-import { TOP_N, PRIORITY_TOP_N } from "./config.js?v=20260703-12";
+import { TOP_N, PRIORITY_TOP_N } from "./config.js?v=20260703-16";
 
 export function getMonths(rows) {
   return [...new Set(rows.map((r) => r.연월))].sort();
@@ -69,9 +69,16 @@ function branchCountsByDevice(rows, deviceCol = "기번", branchCol = "지점명
   return map;
 }
 
-export function primaryBranchForDevice(rows, deviceId, deviceCol = "기번", branchCol = "지점명") {
-  const counts = branchCountsByDevice(rows, deviceCol, branchCol).get(String(deviceId));
-  if (!counts?.size) return "";
+export function primaryBranchForDevice(rows, deviceId, deviceCol = "기번", branchCol = "지점명", month = null) {
+  let subset = rows;
+  if (month) subset = subset.filter((r) => r.연월 === month);
+  const counts = branchCountsByDevice(subset, deviceCol, branchCol).get(String(deviceId));
+  if (!counts?.size) {
+    if (month) {
+      return primaryBranchForDevice(rows, deviceId, deviceCol, branchCol);
+    }
+    return "";
+  }
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
 }
 
@@ -79,6 +86,34 @@ export function formatDeviceLabel(deviceId, branchName) {
   const id = String(deviceId ?? "");
   const branch = String(branchName ?? "").trim();
   return branch ? `${id} (${branch})` : id;
+}
+
+function contentCountsByDetail(rows, detailCol = "세부장애", contentCol = "장애내용") {
+  const map = new Map();
+  for (const row of rows) {
+    const code = String(row[detailCol] ?? "");
+    if (!code) continue;
+    const content = String(row[contentCol] ?? "").trim();
+    if (!content) continue;
+    if (!map.has(code)) map.set(code, new Map());
+    const counts = map.get(code);
+    counts.set(content, (counts.get(content) || 0) + 1);
+  }
+  return map;
+}
+
+export function primaryFaultContent(rows, detailCode, detailCol = "세부장애", contentCol = "장애내용") {
+  const counts = contentCountsByDetail(rows, detailCol, contentCol).get(String(detailCode));
+  if (!counts?.size) return "";
+  return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+}
+
+export function formatDetailLabel(rows, detailCode, detailCol = "세부장애", contentCol = "장애내용") {
+  const code = String(detailCode ?? "");
+  const content = primaryFaultContent(rows, code, detailCol, contentCol);
+  if (!content) return code;
+  const short = content.length > 22 ? `${content.slice(0, 20)}…` : content;
+  return `${code} · ${short}`;
 }
 
 export function dailyTrend(rows, month, entityCol, entities) {
@@ -125,7 +160,16 @@ export function entityOptions(rows, entityCol, month = null) {
   }
   return [...counts.entries()]
     .sort((a, b) => b[1] - a[1])
-    .map(([value, count]) => ({ value, label: `${value} (${count.toLocaleString()}건)`, count }));
+    .map(([value, count]) => {
+      let display = value;
+      if (entityCol === "기번") {
+        display = formatDeviceLabel(
+          value,
+          primaryBranchForDevice(rows, value, "기번", "지점명", month),
+        );
+      }
+      return { value, label: `${display} (${count.toLocaleString()}건)`, count };
+    });
 }
 
 export function computePriority(rows, topN = PRIORITY_TOP_N) {

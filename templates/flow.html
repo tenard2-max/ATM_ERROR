@@ -98,7 +98,7 @@
 
       <div class="metric"><span>선택</span><strong>{{ selected_values|length }}개</strong></div>
 
-      <div class="metric"><span>분석 대상</span><strong>{{ selected_values|join(', ')[:120] }}{% if selected_values|join(', ')|length > 120 %}…{% endif %}</strong></div>
+      <div class="metric"><span>분석 대상</span><strong>{{ label_short or selected_values|join(', ') }}</strong></div>
 
       <div class="metric"><span>조회 연월</span><strong>{{ flow_month }}</strong></div>
 
@@ -183,6 +183,7 @@
       {% set nav_type = target_type %}
       {% set options = selected_values if selected_values else options %}
       {% set selected_value = selected_values[0] if selected_values else (options[0] if options else '') %}
+      {% set exclude_page = 'flow' %}
       {% include '_nav_actions.html' %}
     {% endif %}
 

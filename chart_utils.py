@@ -177,6 +177,7 @@ def multi_entity_monthly_figure(
     key_col: str,
     entities: list[str],
     title: str,
+    display_names: dict[str, str] | None = None,
 ) -> go.Figure:
     """여러 기번/지점의 월별 추이를 한 차트에 표시."""
     import analyzer
@@ -199,7 +200,7 @@ def multi_entity_monthly_figure(
                 x=trend["연월"],
                 y=trend["장애건수"],
                 mode="lines+markers",
-                name=str(ent),
+                name=str(display_names.get(ent, ent) if display_names else ent),
                 line=dict(color=colors[len(fig.data) % len(colors)], width=2),
                 marker=dict(size=6),
             )
@@ -341,29 +342,35 @@ def distribution_bar_figure(
     label_col: str,
     title: str,
     top_n: int | None = 15,
+    *,
+    display_col: str | None = None,
 ) -> go.Figure:
     chart_df = counts.copy()
     if top_n:
         chart_df = chart_df.head(top_n)
     chart_df = chart_df.sort_values("장애건수", ascending=True)
+    y_col = display_col if display_col and display_col in chart_df.columns else label_col
+    y_labels = chart_df[y_col].astype(str).tolist()
     fig = go.Figure(
         go.Bar(
             x=chart_df["장애건수"],
-            y=chart_df[label_col],
+            y=y_labels,
             orientation="h",
             text=chart_df["장애건수"],
             texttemplate="%{text:,}",
             textposition="outside",
+            cliponaxis=False,
             marker_color=_bar_colors(len(chart_df)),
         )
     )
     fig.update_layout(
         title=title,
         showlegend=False,
-        height=max(320, len(chart_df) * 36),
-        margin=dict(l=20, r=20, t=50, b=20),
-        xaxis_title="장애건수",
-        yaxis_title=label_col,
+        height=max(360, len(chart_df) * 44 + 80),
+        margin=dict(l=40, r=72, t=56, b=48),
+        xaxis=dict(title="장애건수", rangemode="tozero"),
+        yaxis=dict(type="category", categoryorder="total ascending", automargin=True),
+        bargap=0.25,
     )
     return fig
 

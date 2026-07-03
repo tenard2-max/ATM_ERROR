@@ -1,4 +1,4 @@
-import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-12";
+import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-16";
 import {
   attachBranchName,
   computePriority,
@@ -7,12 +7,14 @@ import {
   drilldown,
   entityOptions,
   formatDeviceLabel,
+  formatDetailLabel,
   getMonths,
   monthlyCounts,
   monthlyTrend,
+  primaryBranchForDevice,
   topNByMonth,
-} from "./analyzer.js?v=20260703-12";
-import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-12";
+} from "./analyzer.js?v=20260703-16";
+import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-16";
 import {
   applyMapping,
   clearExtraRows,
@@ -21,7 +23,7 @@ import {
   initStore,
   loadMapping,
   replaceMonthRows,
-} from "./store.js?v=20260703-12";
+} from "./store.js?v=20260703-16";
 
 const state = { page: "compare", params: new URLSearchParams() };
 
@@ -119,7 +121,7 @@ function buildNavLinks(navType, value, month) {
   return { flowLink, codeLink, priorityLink: "#/priority" };
 }
 
-function renderNavActions({ month, navType, options, selectedValue }) {
+function renderNavActions({ month, navType, options, selectedValue, excludePage }) {
   if (!month || !options?.length) return "";
   const sel = selectedValue || options[0];
   saveNavContext(navType, sel, month);
@@ -129,6 +131,17 @@ function renderNavActions({ month, navType, options, selectedValue }) {
         `<option value="${esc(o)}"${String(o) === String(sel) ? " selected" : ""}>${esc(o)}</option>`,
     )
     .join("");
+  const navButtons = [
+    { page: "flow", target: "flow", label: "장애다발기기분석", className: "nav-link-btn" },
+    { page: "code", target: "code", label: "모듈별장애분석", className: "nav-link-btn secondary" },
+    { page: "priority", target: "priority", label: "중점장애관리", className: "nav-link-btn secondary", href: "#/priority" },
+  ]
+    .filter((item) => item.page !== excludePage)
+    .map(
+      (item) =>
+        `<a class="${item.className}" data-nav-target="${item.target}" href="${item.href || "#"}">${item.label}</a>`,
+    )
+    .join("");
   return `
     <section class="card nav-actions" data-nav-month="${esc(month)}" data-nav-type="${esc(navType)}">
       <h3>다음 단계로 이동</h3>
@@ -136,9 +149,7 @@ function renderNavActions({ month, navType, options, selectedValue }) {
         <select class="nav-entity-select">${optsHtml}</select>
       </label>
       <div class="nav-btn-row">
-        <a class="nav-link-btn" data-nav-target="flow" href="#">장애다발기기분석</a>
-        <a class="nav-link-btn secondary" data-nav-target="code" href="#">모듈별장애분석</a>
-        <a class="nav-link-btn secondary" data-nav-target="priority" href="#/priority">중점장애관리</a>
+        ${navButtons}
       </div>
     </section>
   `;
@@ -180,9 +191,12 @@ function bindNavActions() {
       const value = select.value;
       saveNavContext(navType, value, month);
       const links = buildNavLinks(navType, value, month);
-      section.querySelector('[data-nav-target="flow"]').href = links.flowLink;
-      section.querySelector('[data-nav-target="code"]').href = links.codeLink;
-      section.querySelector('[data-nav-target="priority"]').href = links.priorityLink;
+      const flowBtn = section.querySelector('[data-nav-target="flow"]');
+      const codeBtn = section.querySelector('[data-nav-target="code"]');
+      const priorityBtn = section.querySelector('[data-nav-target="priority"]');
+      if (flowBtn) flowBtn.href = links.flowLink;
+      if (codeBtn) codeBtn.href = links.codeLink;
+      if (priorityBtn) priorityBtn.href = links.priorityLink;
     };
     select.addEventListener("change", update);
     update();
@@ -386,6 +400,15 @@ function renderCompare() {
   `;
 }
 
+function flowEntityDisplay(value, col, rows, month = null) {
+  if (col !== "기번") return String(value);
+  return formatDeviceLabel(value, primaryBranchForDevice(rows, value, "기번", "지점명", month));
+}
+
+function flowDisplayLabel(values, col, rows, month = null) {
+  return flowLabel(values.map((v) => flowEntityDisplay(v, col, rows, month)));
+}
+
 function renderFlow() {
   const rows = getRows();
   const months = getMonths(rows);
@@ -401,7 +424,7 @@ function renderFlow() {
   const monthTotal = rows.filter(
     (r) => r.연월 === flowMonth && selectedValues.includes(String(r[col])),
   ).length;
-  const labelShort = flowLabel(selectedValues);
+  const labelShort = flowDisplayLabel(selectedValues, col, rows, flowMonth);
   const chartTitle =
     view === "monthly" ? `${labelShort} — 월별 추이` : `${labelShort} — ${flowMonth} 일별 추이`;
 
@@ -410,7 +433,7 @@ function renderFlow() {
     if (view === "monthly") {
       const allMonths = getMonths(rows);
       const series = selectedValues.map((value) => ({
-        name: value,
+        name: flowEntityDisplay(value, col, rows, flowMonth),
         y: allMonths.map((m) => {
           const hit = monthlyTrend(rows, col, value).find((r) => r.연월 === m);
           return hit ? hit.장애건수 : 0;
@@ -424,7 +447,7 @@ function renderFlow() {
         el,
         days,
         selectedValues.map((value) => ({
-          name: value,
+          name: flowEntityDisplay(value, col, rows, flowMonth),
           y: days.map(
             (day) =>
               dailyRows.find((r) => r.일 === day && String(r[col]) === String(value))?.장애건수 || 0,
@@ -498,6 +521,7 @@ function renderFlow() {
       navType: col === "지점명" ? "지점" : col === "기종" ? "기종" : "기번",
       options: selectedValues.length ? selectedValues : options.map((o) => String(o.value)),
       selectedValue: selectedValues[0] || options[0]?.value || "",
+      excludePage: "flow",
     })}
   `;
 }
@@ -539,27 +563,31 @@ function renderCode() {
 
   queueMicrotask(() => {
     if (faultList.length) {
+      const faultLabels = faultList
+        .map((d) => formatDetailLabel(moduleScope, d.세부장애))
+        .slice()
+        .reverse();
       renderBarChart(
         document.getElementById("chart-code-fault"),
-        faultList.map((d) => d.세부장애).slice().reverse(),
+        faultLabels,
         faultList.map((d) => d.장애건수).slice().reverse(),
-        `${faultType} — 세부장애 분포`,
+        `${faultType} — 세부장애 분포 (건수)`,
       );
     }
     if (code2List.length) {
       renderBarChart(
         document.getElementById("chart-code2"),
-        code2List.map((d) => d.장애코드2).slice().reverse(),
+        code2List.map((d) => String(d.장애코드2)).slice().reverse(),
         code2List.map((d) => d.장애건수).slice().reverse(),
-        `${activeDetail} — 장애코드2 분포`,
+        `${activeDetail} — 장애코드2 분포 (건수)`,
       );
     }
     if (branchList.length) {
       renderBarChart(
         document.getElementById("chart-code-branch"),
-        branchList.map((d) => d.지점명).slice().reverse(),
+        branchList.map((d) => String(d.지점명)).slice().reverse(),
         branchList.map((d) => d.장애건수).slice().reverse(),
-        `${activeCode2} — 지점별 분포`,
+        `${activeCode2} — 지점별 분포 (건수)`,
       );
     }
     if (deviceList.length) {
@@ -607,6 +635,7 @@ function renderCode() {
 
     <section class="card">
       <h3>Step 2 · 세부장애 <span class="muted">(${moduleScope.length.toLocaleString()}건)</span></h3>
+      <p class="caption">세부장애 코드별 장애 건수 · 막대 길이 = 해당 코드 발생 횟수 (Y축: 코드 · 장애내용)</p>
       <div class="grid-2">
         <div id="chart-code-fault" class="chart-box"></div>
         <div>
@@ -697,6 +726,7 @@ function renderCode() {
           ? [activeBranch]
           : faultList.slice(0, 10).map((d) => String(d.세부장애)),
       selectedValue: activeDevice || activeBranch || faultList[0]?.세부장애 || "",
+      excludePage: "code",
     })}
   `;
 }
@@ -737,6 +767,7 @@ function renderPriority() {
       navType: "기번",
       options: ranked.map((r) => String(r.기번)),
       selectedValue: ranked[0] ? String(ranked[0].기번) : "",
+      excludePage: "priority",
     })}
   `;
 }

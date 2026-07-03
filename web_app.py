@@ -655,6 +655,16 @@ def flow():
 
     selected_value = selected_values[0] if selected_values else ""
 
+    display_values = [
+        analyzer.format_device_label(v, analyzer.primary_branch_for_device(df, v))
+        if key_col == "기번"
+        else v
+        for v in selected_values
+    ]
+    label_short = ", ".join(display_values[:3])
+    if len(selected_values) > 3:
+        label_short += f" 외 {len(selected_values) - 3}개"
+
     chart_data = (
         analyzer.get_trend_chart_data(df, key_col, selected_value) if selected_value else pd.DataFrame()
     )
@@ -693,9 +703,6 @@ def flow():
     flow_table_html = ""
     chart_title = ""
     if flow_month and selected_values:
-        label_short = ", ".join(selected_values[:3])
-        if len(selected_values) > 3:
-            label_short += f" 외 {len(selected_values) - 3}개"
         if view == "monthly":
             chart_title = f"{label_short} — 월별 추이"
             if len(selected_values) == 1:
@@ -703,8 +710,13 @@ def flow():
                 flow_html = figure_html(trend_line_figure(monthly_data, chart_title))
                 flow_table_html = table_html(monthly_data) if not monthly_data.empty else ""
             else:
+                name_map = (
+                    dict(zip(selected_values, display_values)) if key_col == "기번" else None
+                )
                 flow_html = figure_html(
-                    multi_entity_monthly_figure(df, key_col, selected_values, chart_title)
+                    multi_entity_monthly_figure(
+                        df, key_col, selected_values, chart_title, display_names=name_map
+                    )
                 )
                 flow_table_html = ""
             month_total = int(
@@ -725,8 +737,15 @@ def flow():
                 )
                 flow_table_html = table_html(daily_df[["일", "장애건수"]])
             else:
+                plot_df = daily_raw.copy()
+                if key_col == "기번":
+                    plot_df[key_col] = plot_df[key_col].map(
+                        lambda x: analyzer.format_device_label(
+                            x, analyzer.primary_branch_for_device(df, x)
+                        )
+                    )
                 flow_html = figure_html(
-                    daily_multi_line_figure(daily_raw, key_col, chart_title, last_day)
+                    daily_multi_line_figure(plot_df, key_col, chart_title, last_day)
                 )
                 flow_table_html = ""
             month_total = int(daily_raw["장애건수"].sum()) if not daily_raw.empty else 0
@@ -766,6 +785,7 @@ def flow():
         flow_html=flow_html,
         flow_table_html=flow_table_html,
         chart_title=chart_title,
+        label_short=label_short,
         bucket_table_html=flow_table_html,
         view=view,
         flow_month=flow_month,
@@ -782,6 +802,14 @@ def flow():
         link_months=link_months,
         link_faults=link_faults,
     )
+
+
+def _with_detail_labels(scope: pd.DataFrame, counts: pd.DataFrame) -> pd.DataFrame:
+    out = counts.copy()
+    if out.empty:
+        return out
+    out["표시"] = analyzer.detail_chart_labels(scope, out)
+    return out
 
 
 def _resolve_default_mode(nav_type: str | None) -> str:
@@ -905,7 +933,13 @@ def code_analysis():
         scope_count=len(scope),
         fault_list=fault_list,
         fault_chart=figure_html(
-            distribution_bar_figure(fault_list, "세부장애", f"{selected_type} — 세부장애 분포", top_n=15)
+            distribution_bar_figure(
+                _with_detail_labels(scope, fault_list),
+                "세부장애",
+                f"{selected_type} — 세부장애 분포 (건수)",
+                top_n=15,
+                display_col="표시",
+            )
         )
         if not fault_list.empty
         else "",

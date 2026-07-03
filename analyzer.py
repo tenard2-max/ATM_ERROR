@@ -82,6 +82,64 @@ def attach_branch_name(
     return out[cols]
 
 
+def primary_branch_for_device(
+    df: pd.DataFrame,
+    device_id: str,
+    device_col: str = "기번",
+    branch_col: str = "지점명",
+) -> str:
+    data = ensure_dataframe(df)
+    subset = data[data[device_col].astype(str) == str(device_id)]
+    if subset.empty or branch_col not in subset.columns:
+        return ""
+    modes = subset[branch_col].mode()
+    return str(modes.iloc[0]) if not modes.empty else str(subset[branch_col].iloc[0])
+
+
+def format_device_label(device_id: str, branch_name: str) -> str:
+    device = str(device_id or "")
+    branch = str(branch_name or "").strip()
+    return f"{device} ({branch})" if branch else device
+
+
+def primary_fault_content(
+    df: pd.DataFrame,
+    detail_code: str,
+    detail_col: str = "세부장애",
+    content_col: str = "장애내용",
+) -> str:
+    data = ensure_dataframe(df)
+    subset = data[data[detail_col].astype(str) == str(detail_code)]
+    if subset.empty or content_col not in subset.columns:
+        return ""
+    counts = subset[content_col].dropna().astype(str).str.strip().value_counts()
+    return str(counts.index[0]) if not counts.empty else ""
+
+
+def format_detail_label(
+    df: pd.DataFrame,
+    detail_code: str,
+    detail_col: str = "세부장애",
+    content_col: str = "장애내용",
+) -> str:
+    code = str(detail_code or "")
+    content = primary_fault_content(df, code, detail_col, content_col)
+    if not content:
+        return code
+    short = content if len(content) <= 22 else content[:20] + "…"
+    return f"{code} · {short}"
+
+
+def detail_chart_labels(
+    df: pd.DataFrame,
+    counts: pd.DataFrame,
+    detail_col: str = "세부장애",
+) -> pd.Series:
+    if counts.empty or detail_col not in counts.columns:
+        return pd.Series(dtype=str)
+    return counts[detail_col].map(lambda code: format_detail_label(df, code, detail_col))
+
+
 def daily_trend_by_entities(
     df: pd.DataFrame,
     selected_month: str,
@@ -223,7 +281,10 @@ def entity_select_options(
     for _, row in ranked.iterrows():
         value = str(row[key_col])
         count = int(row["장애건수"])
-        label = f"{value} ({count:,}건)" if show_count else value
+        display = value
+        if key_col == "기번":
+            display = format_device_label(value, primary_branch_for_device(df, value))
+        label = f"{display} ({count:,}건)" if show_count else display
         options.append({"value": value, "label": label, "count": count})
     return options
 
