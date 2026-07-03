@@ -33,8 +33,38 @@ function esc(text) {
 }
 
 function setRoute(page, params = {}) {
-  const qs = new URLSearchParams(params).toString();
-  location.hash = qs ? `#/${page}?${qs}` : `#/${page}`;
+  const qs = new URLSearchParams();
+  for (const [key, val] of Object.entries(params)) {
+    if (val == null || val === "") continue;
+    if (Array.isArray(val)) {
+      val.forEach((item) => {
+        if (item != null && item !== "") qs.append(key, item);
+      });
+    } else {
+      qs.set(key, val);
+    }
+  }
+  const query = qs.toString();
+  location.hash = query ? `#/${page}?${query}` : `#/${page}`;
+}
+
+function parseFlowValues(params, options, fallback = "") {
+  let selected = params.getAll("value");
+  if (!selected.length) {
+    const legacy = params.get("value") || "";
+    if (legacy.includes(",")) selected = legacy.split(",").map((v) => v.trim()).filter(Boolean);
+    else if (legacy) selected = [legacy];
+  }
+  const valid = new Set(options.map((o) => String(o.value)));
+  selected = selected.filter((v) => valid.has(String(v)));
+  if (!selected.length && fallback) selected = [fallback];
+  if (!selected.length && options[0]) selected = [String(options[0].value)];
+  return selected;
+}
+
+function flowLabel(values) {
+  if (values.length <= 3) return values.join(", ");
+  return `${values.slice(0, 3).join(", ")} 외 ${values.length - 3}개`;
 }
 
 function parseRoute() {
@@ -199,36 +229,45 @@ function renderFlow() {
 
   const mode = state.params.get("mode") || "기번 (개별 ATM)";
   const col = mode === "기종 (모델 전체)" ? "기종" : mode === "지점" ? "지점명" : "기번";
-  const options = entityOptions(rows, col);
-  const value = state.params.get("value") || options[0]?.value || "";
+  const multiSelect = col === "기번" || col === "지점명";
+  const options = entityOptions(rows, col, state.params.get("flow_month") || months[months.length - 1]);
+  const selectedValues = parseFlowValues(state.params, options);
   const flowMonth = state.params.get("flow_month") || months[months.length - 1];
   const view = state.params.get("view") || "daily";
-  const monthRows = rows.filter((r) => r.연월 === flowMonth && String(r[col]) === String(value));
-  const monthTotal = monthRows.length;
+  const monthTotal = rows.filter(
+    (r) => r.연월 === flowMonth && selectedValues.includes(String(r[col])),
+  ).length;
+  const labelShort = flowLabel(selectedValues);
+  const chartTitle =
+    view === "monthly" ? `${labelShort} — 월별 추이` : `${labelShort} — ${flowMonth} 일별 추이`;
 
   queueMicrotask(() => {
     const el = document.getElementById("chart-flow");
     if (view === "monthly") {
-      const trend = monthlyTrend(rows, col, value);
-      renderTrendChart(
-        el,
-        trend.map((r) => r.연월),
-        trend.map((r) => r.장애건수),
-        `${value} — 월별 추이`,
-      );
+      const allMonths = getMonths(rows);
+      const series = selectedValues.map((value) => ({
+        name: value,
+        y: allMonths.map((m) => {
+          const hit = monthlyTrend(rows, col, value).find((r) => r.연월 === m);
+          return hit ? hit.장애건수 : 0;
+        }),
+      }));
+      renderLineChart(el, allMonths, series, chartTitle, "연월");
     } else {
-      const { rows: dailyRows, lastDay } = dailyTrend(rows, flowMonth, col, [value]);
+      const { rows: dailyRows, lastDay } = dailyTrend(rows, flowMonth, col, selectedValues);
       const days = Array.from({ length: lastDay }, (_, i) => i + 1);
       renderLineChart(
         el,
         days,
-        [{
+        selectedValues.map((value) => ({
           name: value,
           y: days.map(
-            (day) => dailyRows.find((r) => r.일 === day && String(r[col]) === String(value))?.장애건수 || 0,
+            (day) =>
+              dailyRows.find((r) => r.일 === day && String(r[col]) === String(value))?.장애건수 || 0,
           ),
-        }],
-        `${value} — ${flowMonth} 일별 추이`,
+        })),
+        chartTitle,
+        "일",
       );
     }
   });
@@ -239,21 +278,36 @@ function renderFlow() {
         `<label><input type="radio" name="mode" value="${esc(m)}"${mode === m ? " checked" : ""}> ${esc(m)}</label>`,
     )
     .join(" ");
-  const valueOpts = options
-    .map((o) => `<option value="${esc(o.value)}"${o.value === value ? " selected" : ""}>${esc(o.label)}</option>`)
-    .join("");
   const monthOpts = months
     .map((m) => `<option value="${esc(m)}"${m === flowMonth ? " selected" : ""}>${esc(m)}</option>`)
     .join("");
-  const chartTitle =
-    view === "monthly" ? `${esc(value)} — 월별 추이` : `${esc(value)} — ${esc(flowMonth)} 일별 추이`;
+
+  const selectionControl = multiSelect
+    ? `<div class="check-grid">
+        ${options
+          .slice(0, 50)
+          .map(
+            (o) =>
+              `<label class="check-item"><input type="checkbox" name="value" value="${esc(o.value)}"${selectedValues.includes(String(o.value)) ? " checked" : ""}> ${esc(o.label)}</label>`,
+          )
+          .join("")}
+      </div>
+      <button type="button" id="flow-apply">선택 적용</button>`
+    : `<select name="value">${options
+        .map(
+          (o) =>
+            `<option value="${esc(o.value)}"${selectedValues[0] === String(o.value) ? " selected" : ""}>${esc(o.label)}</option>`,
+        )
+        .join("")}</select>`;
 
   return `
     <h2>📈 장애다발기기분석</h2>
-    <p class="caption">기본 일별 분석 · 월별 보기 선택 가능</p>
+    <p class="caption">기본 일별 분석 · 기번/지점 복수 선택 가능</p>
     <form id="flow-form" class="inline-form card">
       <fieldset><legend>분석 단위</legend>${modeRadios}</fieldset>
-      <label>${esc(col)} 선택 <select name="value">${valueOpts}</select></label>
+      <label>${esc(col)} 선택 ${multiSelect ? "(복수)" : ""}
+        ${selectionControl}
+      </label>
       <label>조회 연월 <select name="flow_month">${monthOpts}</select></label>
       <fieldset>
         <legend>분석 보기</legend>
@@ -262,15 +316,19 @@ function renderFlow() {
       </fieldset>
     </form>
     <div class="metrics">
-      <div class="metric"><span>분석 대상</span><strong>${esc(value)}</strong></div>
+      <div class="metric"><span>선택</span><strong>${selectedValues.length}개</strong></div>
+      <div class="metric"><span>분석 대상</span><strong>${esc(labelShort)}</strong></div>
       <div class="metric"><span>조회 연월</span><strong>${esc(flowMonth)}</strong></div>
       <div class="metric"><span>해당 월 장애</span><strong>${monthTotal.toLocaleString()}건</strong></div>
     </div>
-    <h3>${chartTitle}</h3>
+    <h3>${esc(chartTitle)}</h3>
     <div id="chart-flow" class="chart-box"></div>
-    ${view === "monthly" && getMonths(rows.filter((r) => String(r[col]) === String(value))).length < 2
-      ? '<div class="alert info">추세 분석을 위해 더 많은 월별 데이터가 필요합니다.</div>'
-      : ""}
+    ${
+      view === "monthly" && selectedValues.length === 1
+      && getMonths(rows.filter((r) => String(r[col]) === String(selectedValues[0]))).length < 2
+        ? '<div class="alert info">추세 분석을 위해 더 많은 월별 데이터가 필요합니다.</div>'
+        : ""
+    }
   `;
 }
 
@@ -417,9 +475,36 @@ function bindForms() {
     setRoute("compare", { month: e.target.value, tab: state.params.get("tab") || "지점" });
   });
   const flowForm = document.getElementById("flow-form");
-  flowForm?.addEventListener("change", () => {
+  flowForm?.addEventListener("change", (event) => {
+    if (event.target.name === "value" && event.target.type === "checkbox") return;
     const fd = new FormData(flowForm);
-    setRoute("flow", Object.fromEntries(fd.entries()));
+    const params = {};
+    for (const [key, val] of fd.entries()) {
+      if (key === "value" && flowForm.querySelector('input[name="value"][type="checkbox"]')) {
+        if (!params.value) params.value = [];
+        params.value.push(val);
+      } else {
+        params[key] = val;
+      }
+    }
+    if (!params.value && flowForm.querySelector('select[name="value"]')) {
+      params.value = fd.get("value");
+    }
+    setRoute("flow", params);
+  });
+  document.getElementById("flow-apply")?.addEventListener("click", () => {
+    const fd = new FormData(flowForm);
+    const params = {};
+    for (const [key, val] of fd.entries()) {
+      if (key === "value") {
+        if (!params.value) params.value = [];
+        params.value.push(val);
+      } else {
+        params[key] = val;
+      }
+    }
+    if (!params.value) params.value = [];
+    setRoute("flow", params);
   });
   const codeForm = document.getElementById("code-form");
   codeForm?.addEventListener("change", () => {

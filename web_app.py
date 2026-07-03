@@ -42,6 +42,7 @@ from chart_utils import (
     five_day_flow_figure,
     top10_bar_figure,
     trend_line_figure,
+    multi_entity_monthly_figure,
 )
 from config import (
     BASE_DIR,
@@ -607,19 +608,45 @@ def flow():
     option_items = load_options(flow_month)
     options = [str(item["value"]) for item in option_items]
 
+    multi_select = key_col in ("기번", "지점명")
     default_value = (
         nav_value
         if nav_type == target_type and nav_value in options
         else (options[0] if options else "")
     )
-    selected_value = request.args.get("value") or default_value
-    if selected_value not in options:
-        selected_value = default_value
 
-    chart_data = analyzer.get_trend_chart_data(df, key_col, selected_value)
+    if multi_select:
+        selected_values = request.args.getlist("value")
+        if not selected_values:
+            legacy = request.args.get("value", "")
+            if legacy:
+                selected_values = [v.strip() for v in legacy.split(",") if v.strip()]
+        selected_values = [v for v in selected_values if v in options]
+        if not selected_values and default_value:
+            selected_values = [default_value]
+    else:
+        single = request.args.get("value") or default_value
+        if single not in options:
+            single = default_value
+        selected_values = [single] if single else []
+
+    selected_value = selected_values[0] if selected_values else ""
+
+    chart_data = (
+        analyzer.get_trend_chart_data(df, key_col, selected_value) if selected_value else pd.DataFrame()
+    )
     month_count = len(chart_data)
 
-    entity_months = analyzer.available_months_for_entity(df, key_col, selected_value)
+    if len(selected_values) == 1:
+        entity_months = analyzer.available_months_for_entity(df, key_col, selected_value)
+    else:
+        entity_months = sorted(
+            {
+                month
+                for val in selected_values
+                for month in analyzer.available_months_for_entity(df, key_col, val)
+            }
+        )
     if not entity_months:
         entity_months = all_months
 
@@ -627,8 +654,10 @@ def flow():
         flow_month = entity_months[-1]
         option_items = load_options(flow_month) or option_items
         options = [str(item["value"]) for item in option_items]
-        if selected_value not in options:
-            selected_value = options[0] if options else selected_value
+        selected_values = [v for v in selected_values if v in options] or (
+            [options[0]] if options else []
+        )
+        selected_value = selected_values[0] if selected_values else ""
 
     view = request.args.get("view", "daily")
     if view not in ("daily", "monthly"):
@@ -640,33 +669,45 @@ def flow():
     flow_html = ""
     flow_table_html = ""
     chart_title = ""
-    if flow_month and selected_value:
+    if flow_month and selected_values:
+        label_short = ", ".join(selected_values[:3])
+        if len(selected_values) > 3:
+            label_short += f" 외 {len(selected_values) - 3}개"
         if view == "monthly":
-            monthly_data = analyzer.get_trend_chart_data(df, key_col, selected_value)
-            chart_title = f"{selected_value} — 월별 추이"
-            flow_html = figure_html(trend_line_figure(monthly_data, chart_title))
-            flow_table_html = table_html(monthly_data) if not monthly_data.empty else ""
-            month_total = (
-                int(monthly_data.loc[monthly_data["연월"] == flow_month, "장애건수"].iloc[0])
-                if not monthly_data.empty and flow_month in monthly_data["연월"].values
-                else 0
+            chart_title = f"{label_short} — 월별 추이"
+            if len(selected_values) == 1:
+                monthly_data = analyzer.get_trend_chart_data(df, key_col, selected_value)
+                flow_html = figure_html(trend_line_figure(monthly_data, chart_title))
+                flow_table_html = table_html(monthly_data) if not monthly_data.empty else ""
+            else:
+                flow_html = figure_html(
+                    multi_entity_monthly_figure(df, key_col, selected_values, chart_title)
+                )
+                flow_table_html = ""
+            month_total = int(
+                df[(df["연월"] == flow_month) & (df[key_col].isin(selected_values))].shape[0]
             )
         else:
             daily_raw, last_day = analyzer.daily_trend_by_entities(
-                df, flow_month, key_col, [selected_value]
+                df, flow_month, key_col, selected_values
             )
-            daily_df = daily_raw[daily_raw[key_col] == selected_value].copy()
-            daily_df["발생일"] = daily_df["일"].apply(
-                lambda d: f"{flow_month}-{int(d):02d}"
-            )
-            chart_title = f"{selected_value} — {flow_month} 일별 장애 추이"
-            flow_html = figure_html(
-                daily_line_figure(daily_df[["발생일", "장애건수"]], chart_title)
-            )
-            flow_table_html = table_html(
-                daily_df.rename(columns={"일": "일", "장애건수": "장애건수"})[["일", "장애건수"]]
-            )
-            month_total = int(daily_df["장애건수"].sum()) if not daily_df.empty else 0
+            chart_title = f"{label_short} — {flow_month} 일별 장애 추이"
+            if len(selected_values) == 1:
+                daily_df = daily_raw[daily_raw[key_col] == selected_value].copy()
+                daily_df["발생일"] = daily_df["일"].apply(
+                    lambda d: f"{flow_month}-{int(d):02d}"
+                )
+                flow_html = figure_html(
+                    daily_line_figure(daily_df[["발생일", "장애건수"]], chart_title)
+                )
+                flow_table_html = table_html(daily_df[["일", "장애건수"]])
+            else:
+                flow_html = figure_html(
+                    daily_multi_line_figure(daily_raw, key_col, chart_title, last_day)
+                )
+                flow_table_html = ""
+            month_total = int(daily_raw["장애건수"].sum()) if not daily_raw.empty else 0
+            daily_df = daily_raw
             bucket_df = daily_df
 
     if view == "monthly" and not flow_html:
@@ -691,6 +732,8 @@ def flow():
         mode_labels=mode_labels,
         selected_mode=selected_mode,
         selected_value=selected_value,
+        selected_values=selected_values,
+        multi_select=multi_select,
         option_items=option_items,
         options=options,
         target_type=target_type,

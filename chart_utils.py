@@ -172,7 +172,49 @@ def daily_multi_line_figure(
     return fig
 
 
-def five_day_flow_figure(
+def multi_entity_monthly_figure(
+    df: pd.DataFrame,
+    key_col: str,
+    entities: list[str],
+    title: str,
+) -> go.Figure:
+    """여러 기번/지점의 월별 추이를 한 차트에 표시."""
+    import analyzer
+
+    fig = go.Figure()
+    if not entities:
+        fig.update_layout(title=title, height=420)
+        return fig
+
+    colors = _bar_colors(len(entities))
+    all_months: list[str] = []
+    for ent in entities:
+        trend = analyzer.get_trend_chart_data(df, key_col, ent)
+        if trend.empty:
+            continue
+        months = trend["연월"].tolist()
+        all_months = sorted(set(all_months) | set(months))
+        fig.add_trace(
+            go.Scatter(
+                x=trend["연월"],
+                y=trend["장애건수"],
+                mode="lines+markers",
+                name=str(ent),
+                line=dict(color=colors[len(fig.data) % len(colors)], width=2),
+                marker=dict(size=6),
+            )
+        )
+
+    fig.update_layout(
+        title=title,
+        height=460,
+        margin=dict(l=20, r=140, t=50, b=40),
+        xaxis_title="연월",
+        yaxis_title="장애건수",
+        legend=dict(orientation="v", yanchor="top", y=1, xanchor="left", x=1.02),
+    )
+    return fig
+
     bucket_df: pd.DataFrame,
     title: str,
     last_day: int,

@@ -40,11 +40,23 @@
 
     <label>{{ selected_mode }} 선택
 
-      <select name="value" onchange="this.form.submit()">
-        {% for opt in option_items %}
-          <option value="{{ opt.value }}" {% if opt.value == selected_value %}selected{% endif %}>{{ opt.label }}</option>
-        {% endfor %}
-      </select>
+      {% if multi_select %}
+        <div class="check-grid">
+          {% for opt in option_items[:50] %}
+            <label class="check-item">
+              <input type="checkbox" name="value" value="{{ opt.value }}" {% if opt.value in selected_values %}checked{% endif %}>
+              {{ opt.label }}
+            </label>
+          {% endfor %}
+        </div>
+        <button type="submit">선택 적용</button>
+      {% else %}
+        <select name="value" onchange="this.form.submit()">
+          {% for opt in option_items %}
+            <option value="{{ opt.value }}" {% if opt.value == selected_value %}selected{% endif %}>{{ opt.label }}</option>
+          {% endfor %}
+        </select>
+      {% endif %}
 
     </label>
 
@@ -84,7 +96,9 @@
 
     <div class="metrics">
 
-      <div class="metric"><span>분석 대상</span><strong>{{ selected_value }}</strong></div>
+      <div class="metric"><span>선택</span><strong>{{ selected_values|length }}개</strong></div>
+
+      <div class="metric"><span>분석 대상</span><strong>{{ selected_values|join(', ')[:120] }}{% if selected_values|join(', ')|length > 120 %}…{% endif %}</strong></div>
 
       <div class="metric"><span>조회 연월</span><strong>{{ flow_month }}</strong></div>
 

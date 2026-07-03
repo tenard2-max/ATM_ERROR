@@ -22,7 +22,7 @@ export function renderBarChart(el, labels, values, title, xTitle = "장애건수
   Plotly.newPlot(el, [trace], layout, { responsive: true, displayModeBar: false });
 }
 
-export function renderLineChart(el, x, seriesList, title) {
+export function renderLineChart(el, x, seriesList, title, xTitle = "일") {
   const traces = seriesList.map((s, i) => ({
     type: "scatter",
     mode: "lines+markers",
@@ -34,7 +34,16 @@ export function renderLineChart(el, x, seriesList, title) {
   Plotly.newPlot(
     el,
     traces,
-    { title, height: 380, margin: { t: 50, r: 20, b: 50, l: 50 }, xaxis: { title: "일" }, yaxis: { title: "장애건수" } },
+    {
+      title,
+      height: Math.max(380, 320 + seriesList.length * 10),
+      margin: { t: 50, r: seriesList.length > 1 ? 140 : 20, b: 50, l: 50 },
+      xaxis: { title: xTitle },
+      yaxis: { title: "장애건수" },
+      legend: seriesList.length > 1
+        ? { orientation: "v", yanchor: "top", y: 1, xanchor: "left", x: 1.02 }
+        : undefined,
+    },
     { responsive: true, displayModeBar: false },
   );
 }
