@@ -7,7 +7,6 @@ import {
   drilldown,
   entityOptions,
   formatDeviceLabel,
-  formatDetailLabel,
   getMonths,
   monthlyCounts,
   monthlyTrend,
