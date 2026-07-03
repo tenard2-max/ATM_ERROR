@@ -332,6 +332,23 @@ function renderFlow() {
   `;
 }
 
+function codeHref(params = {}) {
+  const merged = {
+    month: state.params.get("month") || "",
+    fault_type: state.params.get("fault_type") || FAULT_TYPES[0],
+    detail: state.params.get("detail") || "",
+    code2: state.params.get("code2") || "",
+    branch: state.params.get("branch") || "",
+    device: state.params.get("device") || "",
+    ...params,
+  };
+  const clean = {};
+  for (const [k, v] of Object.entries(merged)) {
+    if (v) clean[k] = v;
+  }
+  return `#/code?${new URLSearchParams(clean).toString()}`;
+}
+
 function renderCode() {
   const rows = getRows();
   const months = getMonths(rows);
@@ -342,81 +359,183 @@ function renderCode() {
   const detailCode = state.params.get("detail") || "";
   const code2 = state.params.get("code2") || "";
   const branch = state.params.get("branch") || "";
+  const device = state.params.get("device") || "";
 
-  const filtered = drilldown(rows, { month, faultType, detailCode, code2, branch });
-  const details = distribution(
-    drilldown(rows, { month, faultType }),
-    "세부장애",
-    30,
-  );
-  const code2Rows = detailCode
-    ? distribution(drilldown(rows, { month, faultType, detailCode }), "장애코드2", 20)
-    : [];
-  const branchRows = code2
-    ? distribution(drilldown(rows, { month, faultType, detailCode, code2 }), "지점명", 15)
-    : [];
+  const moduleScope = drilldown(rows, { month, faultType });
+  if (!moduleScope.length) {
+    return `<h2>🧩 모듈별장애분석</h2><div class="alert warn">${esc(month)} · ${esc(faultType)} 데이터가 없습니다.</div>`;
+  }
 
-  const monthOpts = months.map((m) => `<option value="${esc(m)}"${m === month ? " selected" : ""}>${esc(m)}</option>`).join("");
-  const typeOpts = FAULT_TYPES.map((t) => `<option value="${esc(t)}"${t === faultType ? " selected" : ""}>${esc(t)}</option>`).join("");
+  const faultList = distribution(moduleScope, "세부장애", 30);
+  const activeDetail = detailCode || faultList[0]?.세부장애 || "";
+  const detailScope = activeDetail ? drilldown(moduleScope, { detailCode: activeDetail }) : moduleScope;
+  const code2List = distribution(detailScope, "장애코드2", 20);
+  const activeCode2 = code2 || code2List[0]?.장애코드2 || "";
+  const code2Scope = activeCode2 ? drilldown(detailScope, { code2: activeCode2 }) : detailScope;
+  const branchList = distribution(code2Scope, "지점명", 15);
+  const activeBranch = branch;
+  const branchScope = activeBranch ? drilldown(code2Scope, { branch: activeBranch }) : code2Scope;
+  const deviceList = activeBranch ? distribution(branchScope, "기번", 20) : [];
+  const activeDevice = device;
+  const deviceScope = activeDevice ? drilldown(branchScope, { device: activeDevice }) : branchScope;
 
   queueMicrotask(() => {
-    if (filtered.length && branch) {
-      const { rows: dailyRows } = dailyTrend(filtered, month, "기번", [...new Set(filtered.map((r) => r.기번))].slice(0, 5));
-      const days = [...new Set(dailyRows.map((r) => r.일))].sort((a, b) => a - b);
-      const devices = [...new Set(dailyRows.map((r) => r.기번))];
+    if (faultList.length) {
+      renderBarChart(
+        document.getElementById("chart-code-fault"),
+        faultList.map((d) => d.세부장애).slice().reverse(),
+        faultList.map((d) => d.장애건수).slice().reverse(),
+        `${faultType} — 세부장애 분포`,
+      );
+    }
+    if (code2List.length) {
+      renderBarChart(
+        document.getElementById("chart-code2"),
+        code2List.map((d) => d.장애코드2).slice().reverse(),
+        code2List.map((d) => d.장애건수).slice().reverse(),
+        `${activeDetail} — 장애코드2 분포`,
+      );
+    }
+    if (branchList.length) {
+      renderBarChart(
+        document.getElementById("chart-code-branch"),
+        branchList.map((d) => d.지점명).slice().reverse(),
+        branchList.map((d) => d.장애건수).slice().reverse(),
+        `${activeCode2} — 지점별 분포`,
+      );
+    }
+    if (deviceList.length) {
+      renderBarChart(
+        document.getElementById("chart-code-device"),
+        deviceList.map((d) => d.기번).slice().reverse(),
+        deviceList.map((d) => d.장애건수).slice().reverse(),
+        `${activeBranch} — 기번별 분포`,
+      );
+    }
+    if (activeDevice && deviceScope.length) {
+      const dailyMap = new Map();
+      for (const row of deviceScope) {
+        const day = String(row.발생일자).slice(0, 10);
+        dailyMap.set(day, (dailyMap.get(day) || 0) + 1);
+      }
+      const days = [...dailyMap.keys()].sort();
       renderLineChart(
-        document.getElementById("chart-code"),
+        document.getElementById("chart-code-daily"),
         days,
-        devices.map((d) => ({
-          name: d,
-          y: days.map((day) => dailyRows.find((r) => r.일 === day && r.기번 === d)?.장애건수 || 0),
-        })),
-        "일별 추이",
+        [{ name: activeDevice, y: days.map((d) => dailyMap.get(d) || 0) }],
+        `${activeDevice} — 일별 추이`,
+        "발생일",
       );
     }
   });
+
+  const monthOpts = months
+    .map((m) => `<option value="${esc(m)}"${m === month ? " selected" : ""}>${esc(m)}</option>`)
+    .join("");
+  const moduleChips = FAULT_TYPES.map(
+    (t) =>
+      `<a class="chip${t === faultType ? " active" : ""}" href="${codeHref({ fault_type: t, detail: "", code2: "", branch: "", device: "" })}">${esc(t)}</a>`,
+  ).join("");
 
   return `
     <h2>🧩 모듈별장애분석</h2>
     <form id="code-form" class="inline-form card">
       <label>연월 <select name="month">${monthOpts}</select></label>
-      <label>모듈 <select name="fault_type">${typeOpts}</select></label>
-      ${detailCode ? `<input type="hidden" name="detail" value="${esc(detailCode)}">` : ""}
-      ${code2 ? `<input type="hidden" name="code2" value="${esc(code2)}">` : ""}
-      ${branch ? `<input type="hidden" name="branch" value="${esc(branch)}">` : ""}
+      <input type="hidden" name="fault_type" value="${esc(faultType)}">
+      ${activeDetail ? `<input type="hidden" name="detail" value="${esc(activeDetail)}">` : ""}
+      ${activeCode2 ? `<input type="hidden" name="code2" value="${esc(activeCode2)}">` : ""}
+      ${activeBranch ? `<input type="hidden" name="branch" value="${esc(activeBranch)}">` : ""}
+      ${activeDevice ? `<input type="hidden" name="device" value="${esc(activeDevice)}">` : ""}
     </form>
-    <h3>Step 1 · 세부장애</h3>
-    <div id="detail-links">
-      ${details
-        .map(
-          (d) =>
-            `<a class="chip${d.세부장애 === detailCode ? " active" : ""}" href="#/code?month=${encodeURIComponent(month)}&fault_type=${encodeURIComponent(faultType)}&detail=${encodeURIComponent(d.세부장애)}">${esc(d.세부장애)} (${d.장애건수})</a>`,
-        )
-        .join(" ")}
-    </div>
+
+    <section class="card">
+      <h3>모듈선택</h3>
+      <div class="chip-row">${moduleChips}</div>
+    </section>
+
+    <section class="card">
+      <h3>Step 2 · 세부장애</h3>
+      <div class="grid-2">
+        <div id="chart-code-fault" class="chart-box"></div>
+        <div>
+          <div class="chip-row">
+            ${faultList
+              .map(
+                (d) =>
+                  `<a class="chip${d.세부장애 === activeDetail ? " active" : ""}" href="${codeHref({ detail: d.세부장애, code2: "", branch: "", device: "" })}">${esc(d.세부장애)} (${d.장애건수})</a>`,
+              )
+              .join("")}
+          </div>
+          ${tableHtml(faultList, [{ key: "세부장애", label: "세부장애" }, { key: "장애건수", label: "장애건수" }])}
+        </div>
+      </div>
+    </section>
+
     ${
-      detailCode
-        ? `<h3>Step 2 · 장애코드2</h3>
-           ${code2Rows
-             .map(
-               (d) =>
-                 `<a class="chip${d.장애코드2 === code2 ? " active" : ""}" href="#/code?month=${encodeURIComponent(month)}&fault_type=${encodeURIComponent(faultType)}&detail=${encodeURIComponent(detailCode)}&code2=${encodeURIComponent(d.장애코드2)}">${esc(d.장애코드2)} (${d.장애건수})</a>`,
-             )
-             .join(" ")}`
+      code2List.length
+        ? `<section class="card">
+            <h3>Step 3 · 장애코드2</h3>
+            <div class="chip-row">
+              ${code2List
+                .map(
+                  (d) =>
+                    `<a class="chip${d.장애코드2 === activeCode2 ? " active" : ""}" href="${codeHref({ detail: activeDetail, code2: d.장애코드2, branch: "", device: "" })}">${esc(d.장애코드2)} (${d.장애건수})</a>`,
+                )
+                .join("")}
+            </div>
+            <div class="grid-2">
+              <div id="chart-code2" class="chart-box"></div>
+              <div>${tableHtml(code2List, [{ key: "장애코드2", label: "장애코드2" }, { key: "장애건수", label: "장애건수" }])}</div>
+            </div>
+          </section>`
         : ""
     }
+
     ${
-      code2
-        ? `<h3>Step 3 · 지점</h3>
-           ${branchRows
-             .map(
-               (d) =>
-                 `<a class="chip${d.지점명 === branch ? " active" : ""}" href="#/code?month=${encodeURIComponent(month)}&fault_type=${encodeURIComponent(faultType)}&detail=${encodeURIComponent(detailCode)}&code2=${encodeURIComponent(code2)}&branch=${encodeURIComponent(d.지점명)}">${esc(d.지점명)} (${d.장애건수})</a>`,
-             )
-             .join(" ")}`
+      branchList.length
+        ? `<section class="card">
+            <h3>Step 4 · 지점별 분포</h3>
+            <div class="chip-row">
+              ${branchList
+                .map(
+                  (d) =>
+                    `<a class="chip${d.지점명 === activeBranch ? " active" : ""}" href="${codeHref({ detail: activeDetail, code2: activeCode2, branch: d.지점명, device: "" })}">${esc(d.지점명)} (${d.장애건수})</a>`,
+                )
+                .join("")}
+            </div>
+            <div id="chart-code-branch" class="chart-box"></div>
+          </section>`
         : ""
     }
-    ${branch ? `<h3>Step 4 · 일별 추이</h3><div id="chart-code" class="chart-box"></div>` : ""}
+
+    ${
+      activeBranch && deviceList.length
+        ? `<section class="card">
+            <h3>Step 5 · ${esc(activeBranch)} 기번별 분포</h3>
+            <div class="chip-row">
+              ${deviceList
+                .map(
+                  (d) =>
+                    `<a class="chip${d.기번 === activeDevice ? " active" : ""}" href="${codeHref({ detail: activeDetail, code2: activeCode2, branch: activeBranch, device: d.기번 })}">${esc(d.기번)} (${d.장애건수})</a>`,
+                )
+                .join("")}
+            </div>
+            <div class="grid-2">
+              <div id="chart-code-device" class="chart-box"></div>
+              <div>${tableHtml(deviceList, [{ key: "기번", label: "기번" }, { key: "장애건수", label: "장애건수" }])}</div>
+            </div>
+          </section>`
+        : ""
+    }
+
+    ${
+      activeDevice
+        ? `<section class="card">
+            <h3>Step 6 · ${esc(activeDevice)} 일별 추이</h3>
+            <div id="chart-code-daily" class="chart-box"></div>
+          </section>`
+        : ""
+    }
   `;
 }
 
