@@ -3,6 +3,24 @@
 {% block content %}
 <h2>📁 데이터 관리 · 장애 분석 · 그룹핑</h2>
 
+<section class="card">
+  <h3>접속 비밀번호</h3>
+  <p class="caption">기본 비밀번호 00000 · 변경 후 다음 접속부터 새 비밀번호가 적용됩니다.</p>
+  <form method="post" class="inline-form">
+    <input type="hidden" name="action" value="change_password">
+    <label>현재 비밀번호
+      <input type="password" name="current_password" autocomplete="current-password" required>
+    </label>
+    <label>새 비밀번호
+      <input type="password" name="new_password" autocomplete="new-password" required>
+    </label>
+    <label>새 비밀번호 확인
+      <input type="password" name="confirm_password" autocomplete="new-password" required>
+    </label>
+    <button type="submit">비밀번호 변경</button>
+  </form>
+</section>
+
 <div class="grid-2">
   <section class="card">
     <h3>업로드</h3>

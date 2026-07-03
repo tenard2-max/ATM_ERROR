@@ -1,4 +1,4 @@
-import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-24";
+import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-25";
 import {
   attachBranchName,
   computePriority,
@@ -18,8 +18,15 @@ import {
   monthlyTrend,
   primaryBranchForDevice,
   topNByMonth,
-} from "./analyzer.js?v=20260703-24";
-import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-24";
+} from "./analyzer.js?v=20260703-25";
+import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-25";
+import {
+  changePassword,
+  ensureDefaultPasswordHash,
+  isAuthenticated,
+  setAuthenticated,
+  verifyPassword,
+} from "./auth.js?v=20260703-25";
 import {
   applyMapping,
   clearExtraRows,
@@ -28,9 +35,57 @@ import {
   initStore,
   loadMapping,
   replaceMonthRows,
-} from "./store.js?v=20260703-24";
+} from "./store.js?v=20260703-25";
 
 const state = { page: "compare", params: new URLSearchParams() };
+let appStarted = false;
+
+function setShellVisible(visible) {
+  const nav = document.querySelector("nav.main-nav");
+  const dock = document.getElementById("nav-dock");
+  if (nav) nav.hidden = !visible;
+  if (dock) dock.hidden = !visible;
+  document.body.classList.toggle("has-nav-dock", visible);
+}
+
+function renderLogin() {
+  return `
+    <section class="card login-card">
+      <h2>🔐 접속 비밀번호</h2>
+      <p class="caption">접속하려면 비밀번호를 입력하세요.</p>
+      <form id="login-form" class="login-form">
+        <label>비밀번호
+          <input type="password" id="login-password" autocomplete="current-password" required autofocus>
+        </label>
+        <button type="submit">접속</button>
+        <p id="login-msg" class="alert error" hidden></p>
+      </form>
+      <p class="caption muted">기본 비밀번호: 00000 · 데이터관리에서 변경 가능</p>
+    </section>`;
+}
+
+function showLoginGate() {
+  setShellVisible(false);
+  document.getElementById("app").innerHTML = renderLogin();
+  bindLoginForm();
+}
+
+function bindLoginForm() {
+  document.getElementById("login-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const pwd = document.getElementById("login-password")?.value ?? "";
+    const msg = document.getElementById("login-msg");
+    if (await verifyPassword(pwd)) {
+      setAuthenticated(true);
+      await startApp();
+      return;
+    }
+    if (msg) {
+      msg.textContent = "비밀번호가 올바르지 않습니다.";
+      msg.hidden = false;
+    }
+  });
+}
 
 function esc(text) {
   return String(text ?? "")
@@ -959,6 +1014,23 @@ function renderData() {
   const meta = getMeta();
   return `
     <h2>📁 데이터관리</h2>
+    <section class="card">
+      <h3>접속 비밀번호</h3>
+      <p class="caption">기본 비밀번호 00000 · 변경 후 다음 접속부터 새 비밀번호가 적용됩니다.</p>
+      <form id="password-change-form" class="inline-form">
+        <label>현재 비밀번호
+          <input type="password" name="current_password" autocomplete="current-password" required>
+        </label>
+        <label>새 비밀번호
+          <input type="password" name="new_password" autocomplete="new-password" required>
+        </label>
+        <label>새 비밀번호 확인
+          <input type="password" name="confirm_password" autocomplete="new-password" required>
+        </label>
+        <button type="submit">비밀번호 변경</button>
+        <p id="password-msg" class="caption"></p>
+      </form>
+    </section>
     <p class="caption">브라우저에 Excel(.xlsx) 업로드 · 샘플 ${meta.rowCount.toLocaleString()}건 내장</p>
     <div class="metrics">
       <div class="metric"><span>월 수</span><strong>${meta.monthCount}</strong></div>
@@ -1093,6 +1165,19 @@ function bindForms() {
     document.getElementById("upload-msg").textContent = "브라우저 추가 데이터를 초기화했습니다.";
     render();
   });
+  document.getElementById("password-change-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const form = e.currentTarget;
+    const fd = new FormData(form);
+    const msg = document.getElementById("password-msg");
+    if (fd.get("new_password") !== fd.get("confirm_password")) {
+      if (msg) msg.textContent = "새 비밀번호 확인이 일치하지 않습니다.";
+      return;
+    }
+    const result = await changePassword(fd.get("current_password"), fd.get("new_password"));
+    if (msg) msg.textContent = result.message;
+    if (result.ok) form.reset();
+  });
 }
 
 async function loadBuildLabel() {
@@ -1106,6 +1191,10 @@ async function loadBuildLabel() {
 }
 
 function render() {
+  if (!isAuthenticated()) {
+    showLoginGate();
+    return;
+  }
   parseRoute();
   renderNav();
   const app = document.getElementById("app");
@@ -1142,19 +1231,33 @@ function render() {
   });
 }
 
-async function boot() {
+async function startApp() {
+  setShellVisible(true);
   const app = document.getElementById("app");
-  app.innerHTML = '<p class="caption">데이터 로딩 중…</p>';
-  try {
-    await initStore();
-    if (!location.hash || location.hash === "#" || location.hash === "#/") {
-      location.replace("#/compare");
+  if (!appStarted) {
+    appStarted = true;
+    app.innerHTML = '<p class="caption">데이터 로딩 중…</p>';
+    try {
+      await initStore();
+      if (!location.hash || location.hash === "#" || location.hash === "#/") {
+        location.replace("#/compare");
+      }
+      window.addEventListener("hashchange", render);
+    } catch (err) {
+      app.innerHTML = `<div class="alert error">로드 실패: ${esc(err.message)}</div>`;
+      return;
     }
-    render();
-    window.addEventListener("hashchange", render);
-  } catch (err) {
-    app.innerHTML = `<div class="alert error">로드 실패: ${esc(err.message)}</div>`;
   }
+  render();
+}
+
+async function boot() {
+  await ensureDefaultPasswordHash();
+  if (!isAuthenticated()) {
+    showLoginGate();
+    return;
+  }
+  await startApp();
 }
 
 boot();

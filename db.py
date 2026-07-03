@@ -59,7 +59,31 @@ def init_db() -> None:
                 updated_at TEXT,
                 UNIQUE(target_type, target_value, 연월)
             );
+
+            CREATE TABLE IF NOT EXISTS app_settings (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL
+            );
             """
+        )
+
+
+def get_setting(key: str, default: str = "") -> str:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT value FROM app_settings WHERE key = ?", (key,)
+        ).fetchone()
+    return str(row[0]) if row else default
+
+
+def set_setting(key: str, value: str) -> None:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO app_settings (key, value) VALUES (?, ?)
+            ON CONFLICT(key) DO UPDATE SET value = excluded.value
+            """,
+            (key, value),
         )
 
 

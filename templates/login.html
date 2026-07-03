@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>접속 — 장애 다발 기기 분석</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="login-page">
+  <main class="wrap login-wrap">
+    <section class="card login-card">
+      <h1>🏧 장애 다발 기기 분석</h1>
+      <p class="caption">접속하려면 비밀번호를 입력하세요.</p>
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          {% for category, message in messages %}
+            <div class="alert {{ category }}">{{ message }}</div>
+          {% endfor %}
+        {% endif %}
+      {% endwith %}
+      <form method="post" class="login-form">
+        <label>비밀번호
+          <input type="password" name="password" autocomplete="current-password" required autofocus>
+        </label>
+        <button type="submit">접속</button>
+      </form>
+      <p class="caption muted">기본 비밀번호: 00000 · 데이터관리에서 변경 가능</p>
+    </section>
+  </main>
+</body>
+</html>

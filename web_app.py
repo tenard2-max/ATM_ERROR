@@ -10,6 +10,7 @@ import api_settings
 import pandas as pd
 from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 
+import access_auth
 import ai_classifier
 import analyzer
 import cloud_bootstrap
@@ -62,6 +63,33 @@ app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "atm-fault-poc-local-dev-key")
 
 cloud_bootstrap.ensure_runtime_data()
+access_auth.init_default_password()
+
+
+AUTH_EXEMPT_ENDPOINTS = frozenset({"login", "static", "stcore_health"})
+
+
+@app.before_request
+def require_login():
+    if request.endpoint in AUTH_EXEMPT_ENDPOINTS:
+        return None
+    if session.get("authenticated"):
+        return None
+    return redirect(url_for("login", next=request.url))
+
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if session.get("authenticated"):
+        return redirect(request.args.get("next") or url_for("a_compare"))
+    if request.method == "POST":
+        if access_auth.verify_password(request.form.get("password", "")):
+            session["authenticated"] = True
+            session.permanent = True
+            next_url = request.args.get("next") or url_for("a_compare")
+            return redirect(next_url)
+        flash("비밀번호가 올바르지 않습니다.", "error")
+    return render_template("login.html")
 
 
 class _SkipStreamlitPollFilter(logging.Filter):
@@ -459,6 +487,15 @@ def data_manage():
                 db.save_grouping_rules(editable, confirmed=True)
                 set_grouping_draft(editable)
                 flash("장애코드 변경 내용이 저장되었습니다.", "success")
+        elif action == "change_password":
+            current = request.form.get("current_password", "")
+            new_pwd = request.form.get("new_password", "")
+            confirm = request.form.get("confirm_password", "")
+            if new_pwd != confirm:
+                flash("새 비밀번호 확인이 일치하지 않습니다.", "error")
+            else:
+                ok, message = access_auth.change_password(current, new_pwd)
+                flash(message, "success" if ok else "error")
         return redirect(url_for("data_manage"))
 
     pending = get_pending_uploads()
