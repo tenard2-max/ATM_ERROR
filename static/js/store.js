@@ -1,4 +1,4 @@
-import { enrichRows } from "./classify.js?v=20260703-16";
+import { enrichRows } from "./classify.js?v=20260703-18";
 
 const LS_KEY = "atm_fault_extra_rows";
 

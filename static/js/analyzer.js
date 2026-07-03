@@ -1,4 +1,4 @@
-import { TOP_N, PRIORITY_TOP_N } from "./config.js?v=20260703-16";
+import { TOP_N, PRIORITY_TOP_N } from "./config.js?v=20260703-18";
 
 export function getMonths(rows) {
   return [...new Set(rows.map((r) => r.연월))].sort();
