@@ -1,4 +1,4 @@
-"""접속 비밀번호 (기본 00000) — Flask 세션 + DB 저장."""
+"""접속 비밀번호 (기본 000000) — Flask 세션 + DB 저장."""
 from __future__ import annotations
 
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -6,11 +6,16 @@ from werkzeug.security import check_password_hash, generate_password_hash
 import db
 
 PASSWORD_SETTING_KEY = "access_password_hash"
-DEFAULT_PASSWORD = "00000"
+DEFAULT_PASSWORD = "000000"
+LEGACY_DEFAULT_PASSWORD = "00000"
 
 
 def init_default_password() -> None:
-    if not db.get_setting(PASSWORD_SETTING_KEY):
+    stored = db.get_setting(PASSWORD_SETTING_KEY)
+    if not stored:
+        db.set_setting(PASSWORD_SETTING_KEY, generate_password_hash(DEFAULT_PASSWORD))
+        return
+    if check_password_hash(stored, LEGACY_DEFAULT_PASSWORD):
         db.set_setting(PASSWORD_SETTING_KEY, generate_password_hash(DEFAULT_PASSWORD))
 
 

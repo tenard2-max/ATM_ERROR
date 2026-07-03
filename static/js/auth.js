@@ -1,6 +1,7 @@
 const LS_PASSWORD_HASH = "atm_access_pwd_hash";
 const SESSION_AUTH = "atm_authenticated";
-export const DEFAULT_PASSWORD = "00000";
+export const DEFAULT_PASSWORD = "000000";
+const LEGACY_DEFAULT_PASSWORD = "00000";
 
 async function sha256(text) {
   const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(text));
@@ -8,7 +9,12 @@ async function sha256(text) {
 }
 
 export async function ensureDefaultPasswordHash() {
-  if (!localStorage.getItem(LS_PASSWORD_HASH)) {
+  const stored = localStorage.getItem(LS_PASSWORD_HASH);
+  if (!stored) {
+    localStorage.setItem(LS_PASSWORD_HASH, await sha256(DEFAULT_PASSWORD));
+    return;
+  }
+  if (stored === (await sha256(LEGACY_DEFAULT_PASSWORD))) {
     localStorage.setItem(LS_PASSWORD_HASH, await sha256(DEFAULT_PASSWORD));
   }
 }

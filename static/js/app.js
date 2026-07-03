@@ -1,4 +1,4 @@
-import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-25";
+import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-26";
 import {
   attachBranchName,
   computePriority,
@@ -18,15 +18,15 @@ import {
   monthlyTrend,
   primaryBranchForDevice,
   topNByMonth,
-} from "./analyzer.js?v=20260703-25";
-import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-25";
+} from "./analyzer.js?v=20260703-26";
+import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-26";
 import {
   changePassword,
   ensureDefaultPasswordHash,
   isAuthenticated,
   setAuthenticated,
   verifyPassword,
-} from "./auth.js?v=20260703-25";
+} from "./auth.js?v=20260703-26";
 import {
   applyMapping,
   clearExtraRows,
@@ -35,7 +35,7 @@ import {
   initStore,
   loadMapping,
   replaceMonthRows,
-} from "./store.js?v=20260703-25";
+} from "./store.js?v=20260703-26";
 
 const state = { page: "compare", params: new URLSearchParams() };
 let appStarted = false;
@@ -60,7 +60,7 @@ function renderLogin() {
         <button type="submit">접속</button>
         <p id="login-msg" class="alert error" hidden></p>
       </form>
-      <p class="caption muted">기본 비밀번호: 00000 · 데이터관리에서 변경 가능</p>
+      <p class="caption muted">기본 비밀번호: 000000 · 데이터관리에서 변경 가능</p>
     </section>`;
 }
 
@@ -1016,7 +1016,7 @@ function renderData() {
     <h2>📁 데이터관리</h2>
     <section class="card">
       <h3>접속 비밀번호</h3>
-      <p class="caption">기본 비밀번호 00000 · 변경 후 다음 접속부터 새 비밀번호가 적용됩니다.</p>
+      <p class="caption">기본 비밀번호 000000 · 변경 후 다음 접속부터 새 비밀번호가 적용됩니다.</p>
       <form id="password-change-form" class="inline-form">
         <label>현재 비밀번호
           <input type="password" name="current_password" autocomplete="current-password" required>
