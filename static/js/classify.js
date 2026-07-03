@@ -1,4 +1,4 @@
-import { KEYWORD_RULES, PASSBOOK_FAULT_CONTENTS } from "./config.js";
+import { KEYWORD_RULES, PASSBOOK_FAULT_CONTENTS } from "./config.js?v=20260703-11";
 
 export function classifyFaultContent(description) {
   const text = String(description || "").trim();

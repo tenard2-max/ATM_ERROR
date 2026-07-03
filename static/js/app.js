@@ -1,4 +1,4 @@
-import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js";
+import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-11";
 import {
   attachBranchName,
   computePriority,
@@ -11,8 +11,8 @@ import {
   monthlyCounts,
   monthlyTrend,
   topNByMonth,
-} from "./analyzer.js";
-import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js";
+} from "./analyzer.js?v=20260703-11";
+import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-11";
 import {
   applyMapping,
   clearExtraRows,
@@ -21,7 +21,7 @@ import {
   initStore,
   loadMapping,
   replaceMonthRows,
-} from "./store.js";
+} from "./store.js?v=20260703-11";
 
 const state = { page: "compare", params: new URLSearchParams() };
 
@@ -842,6 +842,16 @@ function bindForms() {
   bindNavActions();
 }
 
+async function loadBuildLabel() {
+  try {
+    const res = await fetch(new URL("../../build.txt", import.meta.url));
+    if (!res.ok) return "";
+    return (await res.text()).trim();
+  } catch {
+    return "";
+  }
+}
+
 function render() {
   parseRoute();
   renderNav();
@@ -857,8 +867,12 @@ function render() {
   const fn = views[state.page] || views.compare;
   app.innerHTML = fn();
   bindForms();
-  document.getElementById("subtitle").textContent =
-    `GitHub Pages · ${getMeta().rowCount.toLocaleString()}건 · ${location.hostname}`;
+  loadBuildLabel().then((build) => {
+    const meta = getMeta();
+    const buildLabel = build ? ` · build ${build}` : "";
+    document.getElementById("subtitle").textContent =
+      `GitHub Pages · ${meta.rowCount.toLocaleString()}건${buildLabel}`;
+  });
 }
 
 async function boot() {
