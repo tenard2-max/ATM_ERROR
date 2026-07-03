@@ -1,4 +1,4 @@
-import { NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js";
+import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js";
 import {
   attachBranchName,
   computePriority,
@@ -65,6 +65,137 @@ function parseFlowValues(params, options, fallback = "") {
 function flowLabel(values) {
   if (values.length <= 3) return values.join(", ");
   return `${values.slice(0, 3).join(", ")} 외 ${values.length - 3}개`;
+}
+
+const NAV_STORAGE_KEY = "atmNavContext";
+
+function saveNavContext(type, value, month) {
+  if (!value || !month) return;
+  sessionStorage.setItem(NAV_STORAGE_KEY, JSON.stringify({ type, value, month }));
+}
+
+function flowModeFromNavType(type) {
+  if (type === "지점") return "지점";
+  if (type === "기종") return "기종 (모델 전체)";
+  return "기번 (개별 ATM)";
+}
+
+function navColFromType(type) {
+  if (type === "지점") return "지점명";
+  if (type === "기종") return "기종";
+  return "기번";
+}
+
+function buildNavLinks(navType, value, month) {
+  const rows = getRows();
+  const col = navColFromType(navType);
+  const scoped = rows.filter((r) => r.연월 === month && String(r[col]) === String(value));
+  let topFault = "";
+  if (scoped.length) {
+    const counts = new Map();
+    for (const row of scoped) {
+      counts.set(row.세부장애, (counts.get(row.세부장애) || 0) + 1);
+    }
+    topFault = [...counts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || "";
+  }
+
+  const flowLink = `#/flow?${new URLSearchParams({
+    mode: flowModeFromNavType(navType),
+    value,
+    flow_month: month,
+    view: "daily",
+  }).toString()}`;
+
+  const codeParams = { month };
+  if (navType === "지점") {
+    codeParams.branch = value;
+  } else if (navType === "기번") {
+    codeParams.device = value;
+    if (topFault) codeParams.detail = topFault;
+  }
+  const codeLink = codeHref(codeParams);
+
+  return { flowLink, codeLink, priorityLink: "#/priority" };
+}
+
+function renderNavActions({ month, navType, options, selectedValue }) {
+  if (!month || !options?.length) return "";
+  const sel = selectedValue || options[0];
+  saveNavContext(navType, sel, month);
+  const optsHtml = options
+    .map(
+      (o) =>
+        `<option value="${esc(o)}"${String(o) === String(sel) ? " selected" : ""}>${esc(o)}</option>`,
+    )
+    .join("");
+  return `
+    <section class="card nav-actions" data-nav-month="${esc(month)}" data-nav-type="${esc(navType)}">
+      <h3>선택 항목 → 다른 화면 이동</h3>
+      <label>${esc(navType)} 선택
+        <select class="nav-entity-select">${optsHtml}</select>
+      </label>
+      <div class="nav-btn-row">
+        <a class="nav-link-btn" data-nav-target="flow" href="#">장애다발기기분석</a>
+        <a class="nav-link-btn secondary" data-nav-target="code" href="#">모듈별장애분석</a>
+        <a class="nav-link-btn secondary" data-nav-target="priority" href="#/priority">중점장애관리</a>
+      </div>
+    </section>
+  `;
+}
+
+function bindNavActions() {
+  document.querySelectorAll(".nav-actions").forEach((section) => {
+    const month = section.dataset.navMonth;
+    const navType = section.dataset.navType;
+    const select = section.querySelector(".nav-entity-select");
+    if (!select) return;
+    const update = () => {
+      const value = select.value;
+      saveNavContext(navType, value, month);
+      const links = buildNavLinks(navType, value, month);
+      section.querySelector('[data-nav-target="flow"]').href = links.flowLink;
+      section.querySelector('[data-nav-target="code"]').href = links.codeLink;
+      section.querySelector('[data-nav-target="priority"]').href = links.priorityLink;
+    };
+    select.addEventListener("change", update);
+    update();
+  });
+}
+
+function codeHref(overrides = {}) {
+  const merged = {
+    month: state.params.get("month") || "",
+    fault_type: state.params.get("fault_type") || FAULT_TYPES[0],
+    detail: state.params.get("detail") || "",
+    code2: state.params.get("code2") || "",
+    branch: state.params.get("branch") || "",
+    device: state.params.get("device") || "",
+    ...overrides,
+  };
+  if ("fault_type" in overrides && !("detail" in overrides)) {
+    merged.detail = "";
+    merged.code2 = "";
+    merged.branch = "";
+    merged.device = "";
+  }
+  if ("detail" in overrides && !overrides.detail) {
+    merged.code2 = "";
+    merged.branch = "";
+    merged.device = "";
+  }
+  if ("code2" in overrides && !overrides.code2) {
+    merged.branch = "";
+    merged.device = "";
+  }
+  if ("branch" in overrides && !overrides.branch) {
+    merged.device = "";
+  }
+  const clean = {};
+  for (const [key, val] of Object.entries(merged)) {
+    if (val != null && val !== "") clean[key] = val;
+  }
+  const qs = new URLSearchParams(clean).toString();
+  return qs ? `#/code?${qs}` : "#/code";
 }
 
 function parseRoute() {
@@ -219,6 +350,12 @@ function renderCompare() {
       { key: "장애건수", label: "장애건수" },
     ])}
     ${dailySection}
+    ${renderNavActions({
+      month,
+      navType: cfg.navType,
+      options: monthData.map((r) => String(r[cfg.col])),
+      selectedValue: monthData[0] ? String(monthData[0][cfg.col]) : "",
+    })}
   `;
 }
 
@@ -272,7 +409,7 @@ function renderFlow() {
     }
   });
 
-  const modeRadios = ["기번 (개별 ATM)", "기종 (모델 전체)", "지점"]
+  const modeRadios = FLOW_MODES
     .map(
       (m) =>
         `<label><input type="radio" name="mode" value="${esc(m)}"${mode === m ? " checked" : ""}> ${esc(m)}</label>`,
@@ -329,24 +466,13 @@ function renderFlow() {
         ? '<div class="alert info">추세 분석을 위해 더 많은 월별 데이터가 필요합니다.</div>'
         : ""
     }
+    ${renderNavActions({
+      month: flowMonth,
+      navType: col === "지점명" ? "지점" : col === "기종" ? "기종" : "기번",
+      options: selectedValues.length ? selectedValues : options.map((o) => String(o.value)),
+      selectedValue: selectedValues[0] || options[0]?.value || "",
+    })}
   `;
-}
-
-function codeHref(params = {}) {
-  const merged = {
-    month: state.params.get("month") || "",
-    fault_type: state.params.get("fault_type") || FAULT_TYPES[0],
-    detail: state.params.get("detail") || "",
-    code2: state.params.get("code2") || "",
-    branch: state.params.get("branch") || "",
-    device: state.params.get("device") || "",
-    ...params,
-  };
-  const clean = {};
-  for (const [k, v] of Object.entries(merged)) {
-    if (v) clean[k] = v;
-  }
-  return `#/code?${new URLSearchParams(clean).toString()}`;
 }
 
 function renderCode() {
@@ -363,13 +489,18 @@ function renderCode() {
 
   const moduleScope = drilldown(rows, { month, faultType });
   if (!moduleScope.length) {
-    return `<h2>🧩 모듈별장애분석</h2><div class="alert warn">${esc(month)} · ${esc(faultType)} 데이터가 없습니다.</div>`;
+    return `<h2>🧩 모듈별장애분석</h2>
+      <form id="code-form" class="inline-form card">
+        <label>연월 <select name="month">${months.map((m) => `<option value="${esc(m)}"${m === month ? " selected" : ""}>${esc(m)}</option>`).join("")}</select></label>
+        <label>모듈 <select name="fault_type">${FAULT_TYPES.map((t) => `<option value="${esc(t)}"${t === faultType ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
+      </form>
+      <div class="alert warn">${esc(month)} · ${esc(faultType)} 데이터가 없습니다.</div>`;
   }
 
   const faultList = distribution(moduleScope, "세부장애", 30);
   const activeDetail = detailCode || faultList[0]?.세부장애 || "";
   const detailScope = activeDetail ? drilldown(moduleScope, { detailCode: activeDetail }) : moduleScope;
-  const code2List = distribution(detailScope, "장애코드2", 20);
+  const code2List = distribution(detailScope, "장애코드2", 20).filter((d) => d.장애코드2);
   const activeCode2 = code2 || code2List[0]?.장애코드2 || "";
   const code2Scope = activeCode2 ? drilldown(detailScope, { code2: activeCode2 }) : detailScope;
   const branchList = distribution(code2Scope, "지점명", 15);
@@ -407,7 +538,7 @@ function renderCode() {
     if (deviceList.length) {
       renderBarChart(
         document.getElementById("chart-code-device"),
-        deviceList.map((d) => d.기번).slice().reverse(),
+        deviceList.map((d) => deviceWithBranch({ 기번: d.기번, 지점명: activeBranch })).slice().reverse(),
         deviceList.map((d) => d.장애건수).slice().reverse(),
         `${activeBranch} — 기번별 분포`,
       );
@@ -432,29 +563,23 @@ function renderCode() {
   const monthOpts = months
     .map((m) => `<option value="${esc(m)}"${m === month ? " selected" : ""}>${esc(m)}</option>`)
     .join("");
-  const moduleChips = FAULT_TYPES.map(
-    (t) =>
-      `<a class="chip${t === faultType ? " active" : ""}" href="${codeHref({ fault_type: t, detail: "", code2: "", branch: "", device: "" })}">${esc(t)}</a>`,
+  const typeOpts = FAULT_TYPES.map(
+    (t) => `<option value="${esc(t)}"${t === faultType ? " selected" : ""}>${esc(t)}</option>`,
   ).join("");
 
   return `
     <h2>🧩 모듈별장애분석</h2>
     <form id="code-form" class="inline-form card">
       <label>연월 <select name="month">${monthOpts}</select></label>
-      <input type="hidden" name="fault_type" value="${esc(faultType)}">
-      ${activeDetail ? `<input type="hidden" name="detail" value="${esc(activeDetail)}">` : ""}
-      ${activeCode2 ? `<input type="hidden" name="code2" value="${esc(activeCode2)}">` : ""}
-      ${activeBranch ? `<input type="hidden" name="branch" value="${esc(activeBranch)}">` : ""}
-      ${activeDevice ? `<input type="hidden" name="device" value="${esc(activeDevice)}">` : ""}
+      <label>모듈 <select name="fault_type">${typeOpts}</select></label>
+      ${detailCode ? `<input type="hidden" name="detail" value="${esc(detailCode)}">` : ""}
+      ${code2 ? `<input type="hidden" name="code2" value="${esc(code2)}">` : ""}
+      ${branch ? `<input type="hidden" name="branch" value="${esc(branch)}">` : ""}
+      ${device ? `<input type="hidden" name="device" value="${esc(device)}">` : ""}
     </form>
 
     <section class="card">
-      <h3>모듈선택</h3>
-      <div class="chip-row">${moduleChips}</div>
-    </section>
-
-    <section class="card">
-      <h3>Step 2 · 세부장애</h3>
+      <h3>Step 2 · 세부장애 <span class="muted">(${moduleScope.length.toLocaleString()}건)</span></h3>
       <div class="grid-2">
         <div id="chart-code-fault" class="chart-box"></div>
         <div>
@@ -462,7 +587,7 @@ function renderCode() {
             ${faultList
               .map(
                 (d) =>
-                  `<a class="chip${d.세부장애 === activeDetail ? " active" : ""}" href="${codeHref({ detail: d.세부장애, code2: "", branch: "", device: "" })}">${esc(d.세부장애)} (${d.장애건수})</a>`,
+                  `<a class="chip${d.세부장애 === (detailCode || activeDetail) ? " active" : ""}" href="${codeHref({ detail: d.세부장애, code2: "", branch: "", device: "" })}">${esc(d.세부장애)} (${d.장애건수})</a>`,
               )
               .join("")}
           </div>
@@ -472,7 +597,7 @@ function renderCode() {
     </section>
 
     ${
-      code2List.length
+      detailCode && code2List.length
         ? `<section class="card">
             <h3>Step 3 · 장애코드2</h3>
             <div class="chip-row">
@@ -492,7 +617,7 @@ function renderCode() {
     }
 
     ${
-      branchList.length
+      detailCode && branchList.length
         ? `<section class="card">
             <h3>Step 4 · 지점별 분포</h3>
             <div class="chip-row">
@@ -536,7 +661,21 @@ function renderCode() {
           </section>`
         : ""
     }
+    ${renderNavActions({
+      month,
+      navType: activeDevice ? "기번" : activeBranch ? "지점" : "기번",
+      options: activeDevice
+        ? [activeDevice]
+        : activeBranch
+          ? [activeBranch]
+          : faultList.slice(0, 10).map((d) => String(d.세부장애)),
+      selectedValue: activeDevice || activeBranch || faultList[0]?.세부장애 || "",
+    })}
   `;
+}
+
+function deviceWithBranch(row) {
+  return row.지점명 ? `${row.기번} (${row.지점명})` : row.기번;
 }
 
 function renderPriority() {
@@ -547,7 +686,7 @@ function renderPriority() {
   queueMicrotask(() => {
     renderBarChart(
       document.getElementById("chart-priority"),
-      ranked.map((r) => r.기번).reverse(),
+      ranked.map((r) => deviceWithBranch(r)).reverse(),
       ranked.map((r) => Math.round(r.위험도점수)).reverse(),
       `위험도 TOP${ranked.length} (기번)`,
       "위험도",
@@ -565,6 +704,12 @@ function renderPriority() {
       { key: "전월대비증가율", label: "증가율(%)" },
       { key: "위험도점수", label: "위험도" },
     ])}
+    ${renderNavActions({
+      month: getMonths(getRows()).slice(-1)[0] || "",
+      navType: "기번",
+      options: ranked.map((r) => String(r.기번)),
+      selectedValue: ranked[0] ? String(ranked[0].기번) : "",
+    })}
   `;
 }
 
@@ -626,9 +771,24 @@ function bindForms() {
     setRoute("flow", params);
   });
   const codeForm = document.getElementById("code-form");
-  codeForm?.addEventListener("change", () => {
+  codeForm?.addEventListener("change", (e) => {
+    const target = e.target;
+    if (!(target instanceof HTMLSelectElement)) return;
     const fd = new FormData(codeForm);
-    setRoute("code", Object.fromEntries(fd.entries()));
+    const month = fd.get("month");
+    const faultType = fd.get("fault_type");
+    if (target.name === "fault_type") {
+      setRoute("code", { month, fault_type: faultType });
+      return;
+    }
+    if (target.name === "month") {
+      const params = { month, fault_type: faultType };
+      for (const key of ["detail", "code2", "branch", "device"]) {
+        const val = fd.get(key);
+        if (val) params[key] = val;
+      }
+      setRoute("code", params);
+    }
   });
   document.getElementById("upload-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -677,6 +837,7 @@ function bindForms() {
     document.getElementById("upload-msg").textContent = "브라우저 추가 데이터를 초기화했습니다.";
     render();
   });
+  bindNavActions();
 }
 
 function render() {

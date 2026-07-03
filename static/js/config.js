@@ -1,6 +1,7 @@
 export const TOP_N = 10;
 export const PRIORITY_TOP_N = 20;
 export const FAULT_TYPES = ["현금부", "카드부", "통장부", "통신", "기타"];
+export const FLOW_MODES = ["기번 (개별 ATM)", "지점", "기종 (모델 전체)"];
 
 export const PASSBOOK_FAULT_CONTENTS = new Set([
   "통장 Jam 또는 잔류",
