@@ -23,7 +23,7 @@
   </form>
   <div class="alert warn">선택 연월에 분석할 데이터가 없습니다.</div>
 {% else %}
-  <form method="get" class="inline-form card">
+  <form method="get" class="inline-form card" id="code-filter-form">
     <label>분석 연월
       <select name="month" onchange="this.form.submit()">
         {% for m in months %}
@@ -31,13 +31,34 @@
         {% endfor %}
       </select>
     </label>
+    <label>지점
+      <select name="scope_branch" onchange="this.form.scope_device.value=''; this.form.submit()">
+        <option value="">(전체)</option>
+        {% for row in branch_filter_rows %}
+          <option value="{{ row['지점명'] }}" {% if row['지점명'] == scope_branch %}selected{% endif %}>{{ row['지점명'] }} ({{ "{:,}".format(row['장애건수']|int) }})</option>
+        {% endfor %}
+      </select>
+    </label>
+    <label>기번
+      <select name="scope_device" onchange="this.form.submit()">
+        <option value="">(전체)</option>
+        {% for opt in device_filter_items %}
+          <option value="{{ opt.value }}" {% if opt.value == scope_device %}selected{% endif %}>{{ opt.label }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <input type="hidden" name="ai_type" value="{{ selected_type }}">
+    {% if selected_fault %}<input type="hidden" name="fault" value="{{ selected_fault }}">{% endif %}
+    {% if selected_code2 %}<input type="hidden" name="code2" value="{{ selected_code2 }}">{% endif %}
+    {% if selected_branch %}<input type="hidden" name="branch" value="{{ selected_branch }}">{% endif %}
+    {% if selected_device %}<input type="hidden" name="device" value="{{ selected_device }}">{% endif %}
   </form>
 
   <section class="card">
     <h3>모듈선택</h3>
     <div class="chip-row">
       {% for t in ai_types %}
-        <a href="{{ build_url(ai_type=t, fault='', code2='', branch='', device='') }}" class="chip {% if t == selected_type %}active{% endif %}">{{ t }}</a>
+        <a href="{{ build_url(ai_type=t, fault='', code2='', branch='', device='', scope_branch='', scope_device='') }}" class="chip {% if t == selected_type %}active{% endif %}">{{ t }}</a>
       {% endfor %}
     </div>
   </section>

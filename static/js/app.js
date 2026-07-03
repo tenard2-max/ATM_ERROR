@@ -1,4 +1,4 @@
-import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-19";
+import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-20";
 import {
   attachBranchName,
   computePriority,
@@ -6,16 +6,16 @@ import {
   distribution,
   drilldown,
   entityOptions,
-  formatDeviceLabel,
   enrichFaultDistribution,
   formatDetailLabel,
+  formatDeviceLabel,
   getMonths,
   monthlyCounts,
   monthlyTrend,
   primaryBranchForDevice,
   topNByMonth,
-} from "./analyzer.js?v=20260703-19";
-import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-19";
+} from "./analyzer.js?v=20260703-20";
+import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-20";
 import {
   applyMapping,
   clearExtraRows,
@@ -24,7 +24,7 @@ import {
   initStore,
   loadMapping,
   replaceMonthRows,
-} from "./store.js?v=20260703-19";
+} from "./store.js?v=20260703-20";
 
 const state = { page: "compare", params: new URLSearchParams() };
 
@@ -212,6 +212,8 @@ function codeHref(overrides = {}) {
     code2: state.params.get("code2") || "",
     branch: state.params.get("branch") || "",
     device: state.params.get("device") || "",
+    scope_branch: state.params.get("scope_branch") || "",
+    scope_device: state.params.get("scope_device") || "",
     ...overrides,
   };
   if ("fault_type" in overrides && !("detail" in overrides)) {
@@ -219,6 +221,9 @@ function codeHref(overrides = {}) {
     merged.code2 = "";
     merged.branch = "";
     merged.device = "";
+  }
+  if ("scope_branch" in overrides && !overrides.scope_branch) {
+    merged.scope_device = "";
   }
   if ("detail" in overrides && !overrides.detail) {
     merged.code2 = "";
@@ -538,15 +543,44 @@ function renderCode() {
   const code2 = state.params.get("code2") || "";
   const branch = state.params.get("branch") || "";
   const device = state.params.get("device") || "";
+  const scopeBranch = state.params.get("scope_branch") || "";
+  let scopeDevice = state.params.get("scope_device") || "";
 
-  const moduleScope = drilldown(rows, { month, faultType });
-  if (!moduleScope.length) {
+  const typeScope = drilldown(rows, { month, faultType });
+  const branchFilterOptions = distribution(typeScope, "지점명", 50);
+  const deviceFilterScope = scopeBranch ? drilldown(typeScope, { branch: scopeBranch }) : typeScope;
+  const deviceFilterOptions = entityOptions(deviceFilterScope, "기번", month);
+  if (scopeDevice && !deviceFilterOptions.some((o) => String(o.value) === String(scopeDevice))) {
+    scopeDevice = "";
+  }
+
+  let moduleScope = typeScope;
+  if (scopeBranch) moduleScope = drilldown(moduleScope, { branch: scopeBranch });
+  if (scopeDevice) moduleScope = drilldown(moduleScope, { device: scopeDevice });
+
+  if (!typeScope.length) {
     return `<h2>🧩 모듈별장애분석</h2>
       <form id="code-form" class="inline-form card">
         <label>연월 <select name="month">${months.map((m) => `<option value="${esc(m)}"${m === month ? " selected" : ""}>${esc(m)}</option>`).join("")}</select></label>
         <label>모듈 <select name="fault_type">${FAULT_TYPES.map((t) => `<option value="${esc(t)}"${t === faultType ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
       </form>
       <div class="alert warn">${esc(month)} · ${esc(faultType)} 데이터가 없습니다.</div>`;
+  }
+  if (!moduleScope.length) {
+    return `<h2>🧩 모듈별장애분석</h2>
+      <form id="code-form" class="inline-form card">
+        <label>연월 <select name="month">${months.map((m) => `<option value="${esc(m)}"${m === month ? " selected" : ""}>${esc(m)}</option>`).join("")}</select></label>
+        <label>모듈 <select name="fault_type">${FAULT_TYPES.map((t) => `<option value="${esc(t)}"${t === faultType ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
+        <label>지점 <select name="scope_branch">
+          <option value="">(전체)</option>
+          ${branchFilterOptions.map((d) => `<option value="${esc(d.지점명)}"${d.지점명 === scopeBranch ? " selected" : ""}>${esc(d.지점명)} (${d.장애건수})</option>`).join("")}
+        </select></label>
+        <label>기번 <select name="scope_device">
+          <option value="">(전체)</option>
+          ${deviceFilterOptions.map((o) => `<option value="${esc(o.value)}"${String(o.value) === String(scopeDevice) ? " selected" : ""}>${esc(o.label)}</option>`).join("")}
+        </select></label>
+      </form>
+      <div class="alert warn">선택한 지점·기번 조건에 해당하는 데이터가 없습니다.</div>`;
   }
 
   const faultList = enrichFaultDistribution(moduleScope, distribution(moduleScope, "세부장애", 30));
@@ -623,11 +657,32 @@ function renderCode() {
     (t) => `<option value="${esc(t)}"${t === faultType ? " selected" : ""}>${esc(t)}</option>`,
   ).join("");
 
+  const branchFilterOpts = branchFilterOptions
+    .map(
+      (d) =>
+        `<option value="${esc(d.지점명)}"${d.지점명 === scopeBranch ? " selected" : ""}>${esc(d.지점명)} (${d.장애건수})</option>`,
+    )
+    .join("");
+  const deviceFilterOpts = deviceFilterOptions
+    .map(
+      (o) =>
+        `<option value="${esc(o.value)}"${String(o.value) === String(scopeDevice) ? " selected" : ""}>${esc(o.label)}</option>`,
+    )
+    .join("");
+
   return `
     <h2>🧩 모듈별장애분석</h2>
     <form id="code-form" class="inline-form card">
       <label>연월 <select name="month">${monthOpts}</select></label>
       <label>모듈 <select name="fault_type">${typeOpts}</select></label>
+      <label>지점 <select name="scope_branch">
+        <option value="">(전체)</option>
+        ${branchFilterOpts}
+      </select></label>
+      <label>기번 <select name="scope_device">
+        <option value="">(전체)</option>
+        ${deviceFilterOpts}
+      </select></label>
       ${detailCode ? `<input type="hidden" name="detail" value="${esc(detailCode)}">` : ""}
       ${code2 ? `<input type="hidden" name="code2" value="${esc(code2)}">` : ""}
       ${branch ? `<input type="hidden" name="branch" value="${esc(branch)}">` : ""}
@@ -842,20 +897,26 @@ function bindForms() {
     const target = e.target;
     if (!(target instanceof HTMLSelectElement)) return;
     const fd = new FormData(codeForm);
-    const month = fd.get("month");
-    const faultType = fd.get("fault_type");
+    const params = {
+      month: fd.get("month"),
+      fault_type: fd.get("fault_type"),
+    };
+    for (const key of ["scope_branch", "scope_device", "detail", "code2", "branch", "device"]) {
+      const val = fd.get(key);
+      if (val) params[key] = val;
+    }
+    if (target.name === "scope_branch") {
+      delete params.scope_device;
+    }
     if (target.name === "fault_type") {
-      setRoute("code", { month, fault_type: faultType });
-      return;
+      delete params.detail;
+      delete params.code2;
+      delete params.branch;
+      delete params.device;
+      delete params.scope_branch;
+      delete params.scope_device;
     }
-    if (target.name === "month") {
-      const params = { month, fault_type: faultType };
-      for (const key of ["detail", "code2", "branch", "device"]) {
-        const val = fd.get(key);
-        if (val) params[key] = val;
-      }
-      setRoute("code", params);
-    }
+    setRoute("code", params);
   });
   document.getElementById("upload-form")?.addEventListener("submit", async (e) => {
     e.preventDefault();

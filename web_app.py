@@ -862,7 +862,38 @@ def code_analysis():
     selected_type = request.args.get("ai_type") or ai_types[0]
     if selected_type not in ai_types:
         selected_type = ai_types[0]
-    scope = drilldown.filter_scope(scope, ai_type=selected_type)
+    type_scope = drilldown.filter_scope(scope, ai_type=selected_type)
+
+    scope_branch = request.args.get("scope_branch", "")
+    scope_device = request.args.get("scope_device", "")
+
+    branch_filter_list = drilldown.distribution(type_scope, "지점명", top_n=50)
+    branch_filter_rows = (
+        branch_filter_list.to_dict("records") if not branch_filter_list.empty else []
+    )
+    branch_filter_options = (
+        branch_filter_list["지점명"].tolist() if not branch_filter_list.empty else []
+    )
+    device_filter_scope = type_scope
+    if scope_branch:
+        device_filter_scope = drilldown.filter_scope(type_scope, 지점명=scope_branch)
+    device_filter_items = analyzer.entity_select_options(
+        device_filter_scope, "기번", selected_month, show_count=True
+    )
+    device_filter_values = [str(item["value"]) for item in device_filter_items]
+
+    if scope_branch and scope_branch not in branch_filter_options:
+        scope_branch = ""
+    if scope_device and scope_device not in device_filter_values:
+        scope_device = ""
+
+    analysis_scope = type_scope
+    if scope_branch:
+        analysis_scope = drilldown.filter_scope(analysis_scope, 지점명=scope_branch)
+    if scope_device:
+        analysis_scope = drilldown.filter_scope(analysis_scope, 기번=scope_device)
+
+    scope = analysis_scope
 
     fault_list = analyzer.enrich_fault_distribution(scope, drilldown.distribution(scope, "세부장애"))
     fault_options = fault_list["세부장애"].tolist() if not fault_list.empty else []
@@ -911,6 +942,8 @@ def code_analysis():
         params = {
             "month": selected_month,
             "ai_type": selected_type,
+            "scope_branch": scope_branch,
+            "scope_device": scope_device,
             "fault": selected_fault,
             "code2": selected_code2,
             "branch": selected_branch,
@@ -930,6 +963,11 @@ def code_analysis():
         selected_month=selected_month,
         ai_types=ai_types,
         selected_type=selected_type,
+        scope_branch=scope_branch,
+        scope_device=scope_device,
+        branch_filter_rows=branch_filter_rows,
+        branch_filter_options=branch_filter_options,
+        device_filter_items=device_filter_items,
         scope_count=len(scope),
         fault_list=fault_list,
         fault_chart=figure_html(
@@ -978,6 +1016,8 @@ def code_analysis():
         summary={
             "연월": selected_month,
             "AI유형": selected_type,
+            "필터_지점": scope_branch or "(전체)",
+            "필터_기번": scope_device or "(전체)",
             "세부장애": selected_fault,
             "장애코드2": selected_code2,
             "지점명": selected_branch,
