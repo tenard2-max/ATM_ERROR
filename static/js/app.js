@@ -22,7 +22,7 @@ import {
   replaceMonthRows,
 } from "./store.js";
 
-const state = { page: "home", params: new URLSearchParams() };
+const state = { page: "compare", params: new URLSearchParams() };
 
 function esc(text) {
   return String(text ?? "")
@@ -38,9 +38,9 @@ function setRoute(page, params = {}) {
 }
 
 function parseRoute() {
-  const raw = location.hash.replace(/^#\/?/, "") || "home";
+  const raw = location.hash.replace(/^#\/?/, "") || "compare";
   const [page, query = ""] = raw.split("?");
-  state.page = page || "home";
+  state.page = page || "compare";
   state.params = new URLSearchParams(query);
 }
 
@@ -64,8 +64,7 @@ function tableHtml(rows, columns) {
 
 function renderNav() {
   const nav = document.getElementById("main-nav");
-  nav.innerHTML = NAV_ITEMS.filter((n) => n.id !== "home")
-    .map(
+  nav.innerHTML = NAV_ITEMS.map(
       (item) =>
         `<a href="#/${item.id}" class="nav-tile nav-${item.tone}${state.page === item.id ? " active" : ""}">${esc(item.label)}</a>`,
     )
@@ -488,7 +487,7 @@ function render() {
     priority: renderPriority,
     data: renderData,
   };
-  const fn = views[state.page] || views.home;
+  const fn = views[state.page] || views.compare;
   app.innerHTML = fn();
   bindForms();
   document.getElementById("subtitle").textContent =
@@ -500,6 +499,9 @@ async function boot() {
   app.innerHTML = '<p class="caption">데이터 로딩 중…</p>';
   try {
     await initStore();
+    if (!location.hash || location.hash === "#" || location.hash === "#/") {
+      location.replace("#/compare");
+    }
     render();
     window.addEventListener("hashchange", render);
   } catch (err) {

@@ -18,7 +18,6 @@ export const KEYWORD_RULES = [
 ];
 
 export const NAV_ITEMS = [
-  { id: "home", label: "홈", tone: "blue" },
   { id: "compare", label: "전체비교", tone: "blue" },
   { id: "flow", label: "장애다발기기분석", tone: "orange" },
   { id: "code", label: "모듈별장애분석", tone: "purple" },

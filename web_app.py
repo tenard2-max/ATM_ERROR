@@ -164,14 +164,7 @@ def save_api_key():
 
 @app.route("/")
 def index():
-    df = get_incidents_df()
-    months = sorted(df["연월"].unique().tolist()) if not df.empty else []
-    return render_template(
-        "portal.html",
-        month_count=len(months),
-        months=months,
-        row_count=len(df),
-    )
+    return redirect(url_for("a_compare"))
 
 
 @app.route("/compare")
