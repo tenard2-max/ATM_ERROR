@@ -178,49 +178,13 @@
 
     {% endif %}
 
-
-
-    <h3>모듈별장애분석으로 이동</h3>
-
-    <form method="post" class="inline-form card">
-
-      <input type="hidden" name="action" value="goto_code">
-
-      <label>분석할 연월
-
-        <select name="link_month">
-
-          {% for m in link_months %}
-
-            <option value="{{ m }}" {% if m == flow_month %}selected{% endif %}>{{ m }}</option>
-
-          {% endfor %}
-
-        </select>
-
-      </label>
-
-      <label>세부장애 (선택)
-
-        <select name="link_fault">
-
-          <option value="(전체)">(전체)</option>
-
-          {% for f in link_faults %}
-
-            <option value="{{ f }}">{{ f }}</option>
-
-          {% endfor %}
-
-        </select>
-
-      </label>
-
-      <button type="submit">모듈별장애분석</button>
-
-    </form>
-
-  {% endif %}
+    {% if selected_values or options %}
+      {% set month = flow_month %}
+      {% set nav_type = target_type %}
+      {% set options = selected_values if selected_values else options %}
+      {% set selected_value = selected_values[0] if selected_values else (options[0] if options else '') %}
+      {% include '_nav_actions.html' %}
+    {% endif %}
 
 {% endif %}
 

@@ -238,3 +238,24 @@ pre { background: #edf2f7; padding: 12px; border-radius: 8px; overflow: auto; }
   font-size: 0.9rem;
   cursor: pointer;
 }
+
+.nav-actions { margin-top: 24px; }
+.nav-actions label { display: block; margin-bottom: 12px; }
+.nav-btn-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.nav-link-btn {
+  display: inline-block;
+  padding: 10px 16px;
+  border-radius: 8px;
+  background: var(--primary);
+  color: #fff;
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.95rem;
+}
+.nav-link-btn.secondary { background: #718096; }
+.nav-action-form { display: inline; margin: 0; }

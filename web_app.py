@@ -103,8 +103,8 @@ TAB_CONFIG = {
 
 ANALYSIS_MODES = {
     "기번 (개별 ATM)": "기번",
-    "기종 (모델 전체)": "기종",
     "지점": "지점명",
+    "기종 (모델 전체)": "기종",
 }
 
 
@@ -304,11 +304,34 @@ def goto_flow():
         request.form["selected_month"],
     )
     flash(
-        f"선택 저장: {request.form['nav_type']}={request.form['nav_value']}, "
-        f"연월={request.form['selected_month']}. 장애다발기기분석 페이지로 이동하세요.",
+        f"선택: {request.form['nav_type']}={request.form['nav_value']} → 장애다발기기분석",
         "success",
     )
     return redirect(url_for("flow"))
+
+
+@app.route("/goto-code-nav", methods=["POST"])
+def goto_code_nav():
+    nav_type = request.form["nav_type"]
+    nav_value = request.form["nav_value"]
+    month = request.form["selected_month"]
+    df = get_incidents_df()
+    key_map = {"기번": "기번", "지점": "지점명", "기종": "기종"}
+    key_col = key_map.get(nav_type, "기번")
+    subset = df[(df["연월"] == month) & (df[key_col].astype(str) == str(nav_value))]
+    top_fault = None
+    if not subset.empty:
+        top_fault = subset["세부장애"].value_counts().index[0]
+    set_nav_to_c(month, top_fault)
+    params: dict[str, str] = {"month": month}
+    if nav_type == "지점":
+        params["branch"] = nav_value
+    elif nav_type == "기번":
+        params["device"] = nav_value
+        if top_fault:
+            params["fault"] = top_fault
+    flash(f"선택: {nav_type}={nav_value} → 모듈별장애분석", "success")
+    return redirect(url_for("code_analysis", **params))
 
 
 @app.route("/data", methods=["GET", "POST"])
@@ -959,7 +982,14 @@ def priority():
     if not ranked.empty:
         chart_df = ranked.copy()
         chart_df["장애건수"] = chart_df["위험도점수"]
-        chart_html = figure_html(top10_bar_figure(chart_df, "기번", f"위험도 TOP{len(ranked)} (기번)"))
+        chart_html = figure_html(
+            top10_bar_figure(
+                chart_df,
+                "기번",
+                f"위험도 TOP{len(ranked)} (기번)",
+                suffix_col="지점명",
+            )
+        )
 
     return render_template(
         "priority.html",
@@ -968,6 +998,7 @@ def priority():
         ranked_html=table_html(ranked),
         chart_html=chart_html,
         top_n=top_n,
+        latest_month=sorted(df["연월"].unique())[-1],
     )
 
 

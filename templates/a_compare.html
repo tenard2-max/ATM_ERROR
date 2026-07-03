@@ -43,19 +43,6 @@
     <h3>TOP 목록</h3>
     {{ sec.table_html|safe }}
 
-    <form method="post" action="{{ url_for('goto_flow') }}" class="inline-form card">
-      <label>{{ tab }} 선택 → 장애다발기기분석
-        <select name="nav_value">
-          {% for label in sec.labels %}
-            <option value="{{ label }}">{{ label }}</option>
-          {% endfor %}
-        </select>
-      </label>
-      <input type="hidden" name="nav_type" value="{{ sec.nav_type }}">
-      <input type="hidden" name="selected_month" value="{{ selected_month }}">
-      <button type="submit">장애다발기기분석으로 이동</button>
-    </form>
-
     {% if sec.daily_html %}
       <h3>{{ selected_month }} 일별 장애 추이 (1일~{{ sec.last_day }}일)</h3>
       {% if tab == '지점' and sec.daily_options %}
@@ -76,6 +63,14 @@
         <p class="caption">상단 「조회 연월」 변경 시 해당 월의 일별 추이가 갱신됩니다.</p>
       {% endif %}
       <div class="chart-box">{{ sec.daily_html|safe }}</div>
+    {% endif %}
+
+    {% if sec.labels %}
+      {% set month = selected_month %}
+      {% set nav_type = sec.nav_type %}
+      {% set options = sec.labels %}
+      {% set selected_value = sec.labels[0] %}
+      {% include '_nav_actions.html' %}
     {% endif %}
   {% endif %}
 {% endif %}

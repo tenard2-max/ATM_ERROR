@@ -1,0 +1,39 @@
+<section class="card nav-actions" data-nav-month="{{ month }}" data-nav-type="{{ nav_type }}">
+  <h3>선택 항목 → 다른 화면 이동</h3>
+  <label>{{ nav_type }} 선택
+    <select class="nav-entity-select">
+      {% for opt in options %}
+        <option value="{{ opt }}" {% if opt == selected_value %}selected{% endif %}>{{ opt }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="nav-btn-row">
+    <form method="post" action="{{ url_for('goto_flow') }}" class="nav-action-form">
+      <input type="hidden" name="nav_type" value="{{ nav_type }}">
+      <input type="hidden" name="nav_value" class="nav-hidden-value" value="{{ selected_value }}">
+      <input type="hidden" name="selected_month" value="{{ month }}">
+      <button type="submit">장애다발기기분석</button>
+    </form>
+    <form method="post" action="{{ url_for('goto_code_nav') }}" class="nav-action-form">
+      <input type="hidden" name="nav_type" value="{{ nav_type }}">
+      <input type="hidden" name="nav_value" class="nav-hidden-value" value="{{ selected_value }}">
+      <input type="hidden" name="selected_month" value="{{ month }}">
+      <button type="submit" class="secondary">모듈별장애분석</button>
+    </form>
+    <a class="nav-link-btn secondary" href="{{ url_for('priority') }}">중점장애관리</a>
+  </div>
+</section>
+<script>
+  (function () {
+    const section = document.currentScript.previousElementSibling;
+    if (!section) return;
+    const select = section.querySelector(".nav-entity-select");
+    const sync = () => {
+      section.querySelectorAll(".nav-hidden-value").forEach((el) => {
+        el.value = select.value;
+      });
+    };
+    select?.addEventListener("change", sync);
+    sync();
+  })();
+</script>

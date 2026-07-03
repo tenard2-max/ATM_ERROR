@@ -2,6 +2,7 @@ import { BAR_COLORS } from "./config.js";
 
 export function renderBarChart(el, labels, values, title, xTitle = "장애건수") {
   const colors = labels.map((_, i) => BAR_COLORS[i % BAR_COLORS.length]);
+  const maxLen = Math.max(...labels.map((l) => String(l).length), 10);
   const trace = {
     type: "bar",
     orientation: "h",
@@ -14,7 +15,7 @@ export function renderBarChart(el, labels, values, title, xTitle = "장애건수
   const layout = {
     title,
     height: Math.max(320, labels.length * 42),
-    margin: { l: 160, r: 40, t: 50, b: 40 },
+    margin: { l: Math.min(320, Math.max(100, maxLen * 7)), r: 40, t: 50, b: 40 },
     xaxis: { title: xTitle },
     yaxis: { categoryorder: "total ascending" },
     showlegend: false,

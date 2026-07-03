@@ -20,19 +20,10 @@
   {{ ranked_html|safe }}
   <div class="chart-box">{{ chart_html|safe }}</div>
 
-  <section class="card">
-    <h3>점검 대상 → 장애다발기기분석 / 모듈별장애분석 이동</h3>
-    <form method="post" class="inline-form">
-      <label>점검 대상 기번
-        <select name="device">
-          {% for row in ranked_records %}
-            <option value="{{ row['기번'] }}">{{ row['기번'] }} (위험도 {{ "{:.1f}".format(row['위험도점수']) }})</option>
-          {% endfor %}
-        </select>
-      </label>
-      <button type="submit" name="action" value="goto_flow">장애다발기기분석으로 이동</button>
-      <button type="submit" name="action" value="goto_code" class="secondary">모듈별장애분석으로 이동</button>
-    </form>
-  </section>
+  {% set month = latest_month %}
+  {% set nav_type = '기번' %}
+  {% set options = ranked_records | map(attribute='기번') | list %}
+  {% set selected_value = ranked_records[0]['기번'] %}
+  {% include '_nav_actions.html' %}
 {% endif %}
 {% endblock %}

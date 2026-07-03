@@ -121,5 +121,25 @@
     <summary>현재 필터 조건 요약</summary>
     <pre>{{ summary | tojson(indent=2) }}</pre>
   </details>
+
+  {% if selected_device %}
+    {% set month = selected_month %}
+    {% set nav_type = '기번' %}
+    {% set options = [selected_device] %}
+    {% set selected_value = selected_device %}
+    {% include '_nav_actions.html' %}
+  {% elif selected_branch %}
+    {% set month = selected_month %}
+    {% set nav_type = '지점' %}
+    {% set options = [selected_branch] %}
+    {% set selected_value = selected_branch %}
+    {% include '_nav_actions.html' %}
+  {% elif not fault_list.empty %}
+    {% set month = selected_month %}
+    {% set nav_type = '기번' %}
+    {% set options = fault_list['세부장애'].tolist()[:10] %}
+    {% set selected_value = fault_list['세부장애'].tolist()[0] %}
+    {% include '_nav_actions.html' %}
+  {% endif %}
 {% endif %}
 {% endblock %}
