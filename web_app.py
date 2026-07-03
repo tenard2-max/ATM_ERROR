@@ -934,11 +934,11 @@ def code_analysis():
         fault_list=fault_list,
         fault_chart=figure_html(
             distribution_bar_figure(
-                _with_detail_labels(scope, fault_list),
+                fault_list,
                 "세부장애",
                 f"{selected_type} — 세부장애 분포 (건수)",
                 top_n=15,
-                display_col="표시",
+                y_axis_title="세부장애",
             )
         )
         if not fault_list.empty

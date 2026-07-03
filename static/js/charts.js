@@ -1,32 +1,48 @@
-import { BAR_COLORS } from "./config.js?v=20260703-16";
+import { BAR_COLORS } from "./config.js?v=20260703-17";
 
-export function renderBarChart(el, labels, values, title, xTitle = "장애건수") {
+const BAR_ROW_HEIGHT = 56;
+const BAR_GAP = 0.01;
+const BAR_WIDTH = 0.98;
+
+export function renderBarChart(el, labels, values, title, xTitle = "장애건수", yTitle = "") {
   if (!el || !labels.length) return;
-  const yLabels = labels.map((l) => String(l ?? ""));
+  const pairs = labels.map((label, i) => ({
+    label: String(label ?? ""),
+    value: Number(values[i]) || 0,
+  }));
+  // 장애건수 적은 항목 → 아래, 많은 항목 → 위
+  pairs.sort((a, b) => a.value - b.value);
+  const yLabels = pairs.map((p) => p.label);
+  const xValues = pairs.map((p) => p.value);
   const colors = yLabels.map((_, i) => BAR_COLORS[i % BAR_COLORS.length]);
   const trace = {
     type: "bar",
     orientation: "h",
-    x: values,
+    x: xValues,
     y: yLabels,
-    text: values.map((v) => v.toLocaleString()),
+    text: xValues.map((v) => v.toLocaleString()),
     textposition: "outside",
     cliponaxis: false,
-    marker: { color: colors },
+    width: BAR_WIDTH,
+    marker: {
+      color: colors,
+      line: { width: 10, color: colors },
+    },
   };
   const layout = {
     title,
-    height: Math.max(360, yLabels.length * 44 + 80),
-    margin: { l: 40, r: 72, t: 56, b: 48 },
+    height: Math.max(420, yLabels.length * BAR_ROW_HEIGHT + 100),
+    margin: { l: 48, r: 80, t: 56, b: 48 },
     xaxis: { title: xTitle, rangemode: "tozero" },
     yaxis: {
       type: "category",
-      categoryorder: "total ascending",
+      categoryorder: "array",
+      categoryarray: yLabels,
       automargin: true,
-      title: "",
+      title: yTitle,
     },
     showlegend: false,
-    bargap: 0.25,
+    bargap: BAR_GAP,
   };
   Plotly.newPlot(el, [trace], layout, { responsive: true, displayModeBar: false });
 }

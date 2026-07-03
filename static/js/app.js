@@ -1,4 +1,4 @@
-import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-16";
+import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-17";
 import {
   attachBranchName,
   computePriority,
@@ -13,8 +13,8 @@ import {
   monthlyTrend,
   primaryBranchForDevice,
   topNByMonth,
-} from "./analyzer.js?v=20260703-16";
-import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-16";
+} from "./analyzer.js?v=20260703-17";
+import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-17";
 import {
   applyMapping,
   clearExtraRows,
@@ -23,7 +23,7 @@ import {
   initStore,
   loadMapping,
   replaceMonthRows,
-} from "./store.js?v=20260703-16";
+} from "./store.js?v=20260703-17";
 
 const state = { page: "compare", params: new URLSearchParams() };
 
@@ -563,39 +563,43 @@ function renderCode() {
 
   queueMicrotask(() => {
     if (faultList.length) {
-      const faultLabels = faultList
-        .map((d) => formatDetailLabel(moduleScope, d.세부장애))
-        .slice()
-        .reverse();
       renderBarChart(
         document.getElementById("chart-code-fault"),
-        faultLabels,
-        faultList.map((d) => d.장애건수).slice().reverse(),
+        faultList.map((d) => String(d.세부장애)),
+        faultList.map((d) => d.장애건수),
         `${faultType} — 세부장애 분포 (건수)`,
+        "장애건수",
+        "세부장애",
       );
     }
     if (code2List.length) {
       renderBarChart(
         document.getElementById("chart-code2"),
-        code2List.map((d) => String(d.장애코드2)).slice().reverse(),
-        code2List.map((d) => d.장애건수).slice().reverse(),
+        code2List.map((d) => String(d.장애코드2)),
+        code2List.map((d) => d.장애건수),
         `${activeDetail} — 장애코드2 분포 (건수)`,
+        "장애건수",
+        "장애코드2",
       );
     }
     if (branchList.length) {
       renderBarChart(
         document.getElementById("chart-code-branch"),
-        branchList.map((d) => String(d.지점명)).slice().reverse(),
-        branchList.map((d) => d.장애건수).slice().reverse(),
+        branchList.map((d) => String(d.지점명)),
+        branchList.map((d) => d.장애건수),
         `${activeCode2} — 지점별 분포 (건수)`,
+        "장애건수",
+        "지점명",
       );
     }
     if (deviceList.length) {
       renderBarChart(
         document.getElementById("chart-code-device"),
-        deviceList.map((d) => deviceWithBranch({ 기번: d.기번, 지점명: activeBranch })).slice().reverse(),
-        deviceList.map((d) => d.장애건수).slice().reverse(),
-        `${activeBranch} — 기번별 분포`,
+        deviceList.map((d) => deviceWithBranch({ 기번: d.기번, 지점명: activeBranch })),
+        deviceList.map((d) => d.장애건수),
+        `${activeBranch} — 기번별 분포 (건수)`,
+        "장애건수",
+        "기번",
       );
     }
     if (activeDevice && deviceScope.length) {
@@ -635,7 +639,7 @@ function renderCode() {
 
     <section class="card">
       <h3>Step 2 · 세부장애 <span class="muted">(${moduleScope.length.toLocaleString()}건)</span></h3>
-      <p class="caption">세부장애 코드별 장애 건수 · 막대 길이 = 해당 코드 발생 횟수 (Y축: 코드 · 장애내용)</p>
+      <p class="caption">Y축 = 세부장애 코드 · X축 = 장애 건수 · 위쪽일수록 건수가 많습니다.</p>
       <div class="grid-2">
         <div id="chart-code-fault" class="chart-box"></div>
         <div>

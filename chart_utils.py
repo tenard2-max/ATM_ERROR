@@ -344,6 +344,7 @@ def distribution_bar_figure(
     top_n: int | None = 15,
     *,
     display_col: str | None = None,
+    y_axis_title: str | None = None,
 ) -> go.Figure:
     chart_df = counts.copy()
     if top_n:
@@ -351,6 +352,7 @@ def distribution_bar_figure(
     chart_df = chart_df.sort_values("장애건수", ascending=True)
     y_col = display_col if display_col and display_col in chart_df.columns else label_col
     y_labels = chart_df[y_col].astype(str).tolist()
+    colors = _bar_colors(len(chart_df))
     fig = go.Figure(
         go.Bar(
             x=chart_df["장애건수"],
@@ -360,17 +362,24 @@ def distribution_bar_figure(
             texttemplate="%{text:,}",
             textposition="outside",
             cliponaxis=False,
-            marker_color=_bar_colors(len(chart_df)),
+            width=0.98,
+            marker=dict(color=colors, line=dict(width=10, color=colors)),
         )
     )
     fig.update_layout(
         title=title,
         showlegend=False,
-        height=max(360, len(chart_df) * 44 + 80),
-        margin=dict(l=40, r=72, t=56, b=48),
+        height=max(420, len(chart_df) * 56 + 100),
+        margin=dict(l=48, r=80, t=56, b=48),
         xaxis=dict(title="장애건수", rangemode="tozero"),
-        yaxis=dict(type="category", categoryorder="total ascending", automargin=True),
-        bargap=0.25,
+        yaxis=dict(
+            type="category",
+            categoryorder="array",
+            categoryarray=y_labels,
+            automargin=True,
+            title=y_axis_title or label_col,
+        ),
+        bargap=0.01,
     )
     return fig
 
