@@ -215,6 +215,8 @@ def multi_entity_monthly_figure(
     )
     return fig
 
+
+def five_day_flow_figure(
     bucket_df: pd.DataFrame,
     title: str,
     last_day: int,
