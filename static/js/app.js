@@ -198,20 +198,40 @@ function renderFlow() {
   const months = getMonths(rows);
   if (!months.length) return `<div class="alert warn">데이터가 없습니다.</div>`;
 
-  const mode = state.params.get("mode") || "기번";
+  const mode = state.params.get("mode") || "기번 (개별 ATM)";
   const col = mode === "기종 (모델 전체)" ? "기종" : mode === "지점" ? "지점명" : "기번";
   const options = entityOptions(rows, col);
   const value = state.params.get("value") || options[0]?.value || "";
   const flowMonth = state.params.get("flow_month") || months[months.length - 1];
-  const trend = monthlyTrend(rows, col, value);
+  const view = state.params.get("view") || "daily";
+  const monthRows = rows.filter((r) => r.연월 === flowMonth && String(r[col]) === String(value));
+  const monthTotal = monthRows.length;
 
   queueMicrotask(() => {
-    renderTrendChart(
-      document.getElementById("chart-flow"),
-      trend.map((r) => r.연월),
-      trend.map((r) => r.장애건수),
-      `${value} — 월별 추이`,
-    );
+    const el = document.getElementById("chart-flow");
+    if (view === "monthly") {
+      const trend = monthlyTrend(rows, col, value);
+      renderTrendChart(
+        el,
+        trend.map((r) => r.연월),
+        trend.map((r) => r.장애건수),
+        `${value} — 월별 추이`,
+      );
+    } else {
+      const { rows: dailyRows, lastDay } = dailyTrend(rows, flowMonth, col, [value]);
+      const days = Array.from({ length: lastDay }, (_, i) => i + 1);
+      renderLineChart(
+        el,
+        days,
+        [{
+          name: value,
+          y: days.map(
+            (day) => dailyRows.find((r) => r.일 === day && String(r[col]) === String(value))?.장애건수 || 0,
+          ),
+        }],
+        `${value} — ${flowMonth} 일별 추이`,
+      );
+    }
   });
 
   const modeRadios = ["기번 (개별 ATM)", "기종 (모델 전체)", "지점"]
@@ -226,16 +246,32 @@ function renderFlow() {
   const monthOpts = months
     .map((m) => `<option value="${esc(m)}"${m === flowMonth ? " selected" : ""}>${esc(m)}</option>`)
     .join("");
+  const chartTitle =
+    view === "monthly" ? `${esc(value)} — 월별 추이` : `${esc(value)} — ${esc(flowMonth)} 일별 추이`;
 
   return `
     <h2>📈 장애다발기기분석</h2>
+    <p class="caption">기본 일별 분석 · 월별 보기 선택 가능</p>
     <form id="flow-form" class="inline-form card">
       <fieldset><legend>분석 단위</legend>${modeRadios}</fieldset>
       <label>${esc(col)} 선택 <select name="value">${valueOpts}</select></label>
       <label>조회 연월 <select name="flow_month">${monthOpts}</select></label>
+      <fieldset>
+        <legend>분석 보기</legend>
+        <label><input type="radio" name="view" value="daily"${view === "daily" ? " checked" : ""}> 일별</label>
+        <label><input type="radio" name="view" value="monthly"${view === "monthly" ? " checked" : ""}> 월별</label>
+      </fieldset>
     </form>
+    <div class="metrics">
+      <div class="metric"><span>분석 대상</span><strong>${esc(value)}</strong></div>
+      <div class="metric"><span>조회 연월</span><strong>${esc(flowMonth)}</strong></div>
+      <div class="metric"><span>해당 월 장애</span><strong>${monthTotal.toLocaleString()}건</strong></div>
+    </div>
+    <h3>${chartTitle}</h3>
     <div id="chart-flow" class="chart-box"></div>
-    ${trend.length < 2 ? '<div class="alert info">추세 분석을 위해 더 많은 월별 데이터가 필요합니다.</div>' : ""}
+    ${view === "monthly" && getMonths(rows.filter((r) => String(r[col]) === String(value))).length < 2
+      ? '<div class="alert info">추세 분석을 위해 더 많은 월별 데이터가 필요합니다.</div>'
+      : ""}
   `;
 }
 

@@ -575,6 +575,7 @@ def flow():
                     mode=request.form.get("mode"),
                     value=request.form.get("key_value"),
                     flow_month=request.form.get("flow_month"),
+                    view=request.form.get("view", "daily"),
                 )
             )
         elif action == "goto_code":
@@ -636,22 +637,49 @@ def flow():
         if selected_value not in options:
             selected_value = options[0] if options else selected_value
 
+    view = request.args.get("view", "daily")
+    if view not in ("daily", "monthly"):
+        view = "daily"
+
     bucket_df = pd.DataFrame()
+    daily_df = pd.DataFrame()
     last_day = 30
     flow_html = ""
-    if flow_month:
-        bucket_df, last_day = analyzer.five_day_bucket_counts(
-            df, flow_month, key_col, selected_value
-        )
-        flow_html = figure_html(
-            five_day_flow_figure(
-                bucket_df,
-                f"{target_type} 「{selected_value}」 {flow_month} — 5일별 장애 추이",
-                last_day,
+    flow_table_html = ""
+    chart_title = ""
+    if flow_month and selected_value:
+        if view == "monthly":
+            monthly_data = analyzer.get_trend_chart_data(df, key_col, selected_value)
+            chart_title = f"{selected_value} — 월별 추이"
+            flow_html = figure_html(trend_line_figure(monthly_data, chart_title))
+            flow_table_html = table_html(monthly_data) if not monthly_data.empty else ""
+            month_total = (
+                int(monthly_data.loc[monthly_data["연월"] == flow_month, "장애건수"].iloc[0])
+                if not monthly_data.empty and flow_month in monthly_data["연월"].values
+                else 0
             )
-        )
+        else:
+            daily_raw, last_day = analyzer.daily_trend_by_entities(
+                df, flow_month, key_col, [selected_value]
+            )
+            daily_df = daily_raw[daily_raw[key_col] == selected_value].copy()
+            daily_df["발생일"] = daily_df["일"].apply(
+                lambda d: f"{flow_month}-{int(d):02d}"
+            )
+            chart_title = f"{selected_value} — {flow_month} 일별 장애 추이"
+            flow_html = figure_html(
+                daily_line_figure(daily_df[["발생일", "장애건수"]], chart_title)
+            )
+            flow_table_html = table_html(
+                daily_df.rename(columns={"일": "일", "장애건수": "장애건수"})[["일", "장애건수"]]
+            )
+            month_total = int(daily_df["장애건수"].sum()) if not daily_df.empty else 0
+            bucket_df = daily_df
 
-    month_total = int(bucket_df["장애건수"].sum()) if not bucket_df.empty else 0
+    if view == "monthly" and not flow_html:
+        month_total = 0
+    elif view == "daily" and not flow_html:
+        month_total = 0
 
     anomalies, anomaly_message = analyzer.get_entity_anomalies(df, key_col, selected_value)
     saved_notes = db.load_anomaly_notes(target_type, selected_value)
@@ -677,7 +705,10 @@ def flow():
         chart_data=chart_data,
         chart_table_html=table_html(chart_data) if month_count > 1 else "",
         flow_html=flow_html,
-        bucket_table_html=table_html(bucket_df[["구간", "장애건수"]]) if not bucket_df.empty else "",
+        flow_table_html=flow_table_html,
+        chart_title=chart_title,
+        bucket_table_html=flow_table_html,
+        view=view,
         flow_month=flow_month,
         entity_months=entity_months,
         last_day=last_day,

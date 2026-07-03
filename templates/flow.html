@@ -6,7 +6,7 @@
 
 <h2>📈 장애다발기기분석</h2>
 
-<p class="caption">선택 월 · 5일 구간별 장애건수 · 이상치 · 모듈별장애분석 연계</p>
+<p class="caption">기본 일별 분석 · 월별 보기 선택 가능 · 이상치 · 모듈별장애분석 연계</p>
 
 
 
@@ -62,6 +62,16 @@
 
     </label>
 
+    <fieldset>
+
+      <legend>분석 보기</legend>
+
+      <label><input type="radio" name="view" value="daily" {% if view == 'daily' %}checked{% endif %} onchange="this.form.submit()"> 일별</label>
+
+      <label><input type="radio" name="view" value="monthly" {% if view == 'monthly' %}checked{% endif %} onchange="this.form.submit()"> 월별</label>
+
+    </fieldset>
+
   </form>
 
 
@@ -86,19 +96,15 @@
 
 
 
-    <h3>{{ flow_month }} — 5일별 장애 추이 (1·5·10·15·20·25·30일)</h3>
+    <h3>{{ chart_title }}</h3>
 
     <div class="chart-box">{{ flow_html|safe }}</div>
 
     {{ bucket_table_html|safe }}
 
+    {% if view == 'monthly' and month_count < 2 %}
 
-
-    {% if month_count > 1 %}
-
-      <h3>월별 누적 추이 (참고)</h3>
-
-      {{ chart_table_html|safe }}
+      <div class="alert info">추세 분석을 위해 더 많은 월별 데이터가 필요합니다.</div>
 
     {% endif %}
 
@@ -131,6 +137,8 @@
             <input type="hidden" name="mode" value="{{ selected_mode }}">
 
             <input type="hidden" name="flow_month" value="{{ flow_month }}">
+
+            <input type="hidden" name="view" value="{{ view }}">
 
             <input type="hidden" name="target_type" value="{{ target_type }}">
 
