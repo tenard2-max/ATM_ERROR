@@ -208,3 +208,13 @@ h2 { margin-top: 24px; }
 .pending-row { padding: 8px 0; border-bottom: 1px solid var(--border); }
 details summary { cursor: pointer; font-weight: 600; }
 pre { background: #edf2f7; padding: 12px; border-radius: 8px; overflow: auto; }
+
+.portal-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 20px 24px;
+  margin-top: 20px;
+}
+.portal-card h2 { margin-top: 0; }
+.caption { color: var(--muted); font-size: 0.95rem; }

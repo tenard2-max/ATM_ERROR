@@ -54,4 +54,19 @@ python web_app.py
 
 ## 5. GitHub Pages 한계
 
-GitHub Pages는 정적 사이트만 호스팅합니다. 이 PoC의 업로드·DB·차트·AI 기능은 **Pages 단독으로 불가**하며, Render 등 WSGI 호스팅을 사용하세요.
+GitHub Pages는 **정적 미리보기**만 제공합니다. 저장소 루트 `index.html`은 안내 페이지이며, 차트·업로드·DB는 Flask 서버에서만 동작합니다.
+
+| 접속 방법 | 결과 |
+|-----------|------|
+| GitHub Pages (`*.github.io`) | 안내 페이지만 표시 |
+| `python web_app.py` | 전체 분석 기능 사용 |
+| Render 배포 URL | 전체 분석 기능 사용 |
+
+Render 배포 후 `site-config.js`의 `liveAppUrl`에 URL을 넣으면 GitHub Pages에서 자동으로 앱으로 이동합니다.
+
+```javascript
+window.SITE_CONFIG = {
+  liveAppUrl: "https://your-app.onrender.com",
+  githubRepo: "https://github.com/사용자명/저장소명",
+};
+```

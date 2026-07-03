@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}장애 다발 기기 분석 — 홈{% endblock %}
+
+{% block content %}
+<section class="portal-card">
+  <h2>📊 전체기기 월별비교 PoC</h2>
+  <p class="caption">상단 메뉴에서 원하는 분석 화면을 선택하세요.</p>
+
+  {% if month_count > 0 %}
+    <p class="caption">
+      현재 <strong>{{ month_count }}개월</strong> · <strong>{{ row_count | int }}건</strong> 데이터가 적재되어 있습니다.
+      {% if months %}({{ months | join(', ') }}){% endif %}
+    </p>
+    <p class="caption"><a href="{{ url_for('a_compare') }}">전체비교</a> 화면에서 바로 분석을 시작할 수 있습니다.</p>
+  {% else %}
+    <p class="caption">
+      아직 데이터가 없습니다.
+      <a href="{{ url_for('data_manage') }}">데이터관리</a>에서 장애리스트 Excel을 업로드하세요.
+    </p>
+  {% endif %}
+</section>
+{% endblock %}

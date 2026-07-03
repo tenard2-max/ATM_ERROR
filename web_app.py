@@ -8,7 +8,7 @@ from typing import Any
 
 import api_settings
 import pandas as pd
-from flask import Flask, flash, jsonify, redirect, render_template, request, send_from_directory, session, url_for
+from flask import Flask, flash, jsonify, redirect, render_template, request, session, url_for
 
 import ai_classifier
 import analyzer
@@ -113,11 +113,28 @@ def table_html(df: pd.DataFrame) -> str:
     return df.to_html(index=False, classes="data-table", border=0)
 
 
+def _current_app_url() -> str:
+    try:
+        return request.url_root.rstrip("/")
+    except RuntimeError:
+        return LOCAL_APP_URL.rstrip("/")
+
+
+def _is_local_host() -> bool:
+    try:
+        host = request.host.split(":")[0].lower()
+        return host in ("localhost", "127.0.0.1")
+    except RuntimeError:
+        return True
+
+
 @app.context_processor
 def inject_globals() -> dict[str, Any]:
     key = api_settings.get_api_key()
+    app_url = _current_app_url()
     return {
-        "app_url": LOCAL_APP_URL,
+        "app_url": app_url,
+        "app_mode": "로컬 실행" if _is_local_host() else "웹 서비스",
         "api_key_set": bool(key),
         "api_key_masked": api_settings.mask_api_key(key),
         "nav_items": [
@@ -147,7 +164,14 @@ def save_api_key():
 
 @app.route("/")
 def index():
-    return send_from_directory(BASE_DIR, "index.html")
+    df = get_incidents_df()
+    months = sorted(df["연월"].unique().tolist()) if not df.empty else []
+    return render_template(
+        "portal.html",
+        month_count=len(months),
+        months=months,
+        row_count=len(df),
+    )
 
 
 @app.route("/compare")
