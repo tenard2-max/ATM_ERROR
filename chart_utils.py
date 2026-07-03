@@ -375,6 +375,36 @@ def distribution_bar_figure(
     return fig
 
 
+def day_count_line_figure(daily: pd.DataFrame, title: str) -> go.Figure:
+    """일(1~31) 단위 장애 건수 추이."""
+    fig = go.Figure()
+    if daily.empty:
+        fig.update_layout(title=title, height=360)
+        return fig
+    fig.add_trace(
+        go.Scatter(
+            x=daily["일"],
+            y=daily["장애건수"],
+            mode="lines+markers+text",
+            name="장애건수",
+            text=daily["장애건수"],
+            texttemplate="%{text:,}",
+            textposition="top center",
+            line=dict(color="#1a365d", width=2),
+            marker=dict(size=7),
+        )
+    )
+    fig.update_layout(
+        title=title,
+        height=400,
+        margin=dict(l=20, r=20, t=50, b=40),
+        xaxis=dict(title="일", dtick=1),
+        yaxis=dict(title="장애건수", rangemode="tozero"),
+        showlegend=False,
+    )
+    return fig
+
+
 def daily_line_figure(daily: pd.DataFrame, title: str) -> go.Figure:
     if daily.empty:
         fig = go.Figure()

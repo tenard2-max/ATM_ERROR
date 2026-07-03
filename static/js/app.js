@@ -1,4 +1,4 @@
-import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-21";
+import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-24";
 import {
   attachBranchName,
   computePriority,
@@ -6,7 +6,11 @@ import {
   distribution,
   drilldown,
   entityOptions,
+  branchDisplayLabel,
+  enrichBranchList,
   enrichFaultDistribution,
+  faultDailyTrend,
+  faultMonthlyTrend,
   formatDetailLabel,
   formatDeviceLabel,
   getMonths,
@@ -14,8 +18,8 @@ import {
   monthlyTrend,
   primaryBranchForDevice,
   topNByMonth,
-} from "./analyzer.js?v=20260703-21";
-import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-21";
+} from "./analyzer.js?v=20260703-24";
+import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-24";
 import {
   applyMapping,
   clearExtraRows,
@@ -24,7 +28,7 @@ import {
   initStore,
   loadMapping,
   replaceMonthRows,
-} from "./store.js?v=20260703-21";
+} from "./store.js?v=20260703-24";
 
 const state = { page: "compare", params: new URLSearchParams() };
 
@@ -122,14 +126,22 @@ function buildNavLinks(navType, value, month) {
   return { flowLink, codeLink, priorityLink: "#/priority" };
 }
 
-function renderNavActions({ month, navType, options, selectedValue, excludePage }) {
+function renderNavActions({ month, navType, options, selectedValue, excludePage, rows = null }) {
   if (!month || !options?.length) return "";
   const sel = selectedValue || options[0];
   saveNavContext(navType, sel, month);
+  const optionText = (o) => {
+    if (!rows) return String(o);
+    if (navType === "지점") return branchDisplayLabel(rows, o, "지점명", "기번", month);
+    if (navType === "기번") {
+      return formatDeviceLabel(o, primaryBranchForDevice(rows, o, "기번", "지점명", month));
+    }
+    return String(o);
+  };
   const optsHtml = options
     .map(
       (o) =>
-        `<option value="${esc(o)}"${String(o) === String(sel) ? " selected" : ""}>${esc(o)}</option>`,
+        `<option value="${esc(o)}"${String(o) === String(sel) ? " selected" : ""}>${esc(optionText(o))}</option>`,
     )
     .join("");
   const navButtons = [
@@ -162,7 +174,7 @@ function renderNavFromSession() {
     if (!raw) return "";
     const { type, value, month } = JSON.parse(raw);
     if (!month || !value || !type) return "";
-    return renderNavActions({ month, navType: type, options: [value], selectedValue: value });
+    return renderNavActions({ month, navType: type, options: [value], selectedValue: value, rows: getRows() });
   } catch {
     return "";
   }
@@ -214,6 +226,7 @@ function codeHref(overrides = {}) {
     device: state.params.get("device") || "",
     scope_branch: state.params.get("scope_branch") || "",
     scope_device: state.params.get("scope_device") || "",
+    fault_view: state.params.get("fault_view") || "daily",
     ...overrides,
   };
   if ("fault_type" in overrides && !("detail" in overrides)) {
@@ -229,6 +242,7 @@ function codeHref(overrides = {}) {
     merged.code2 = "";
     merged.branch = "";
     merged.device = "";
+    merged.fault_view = "daily";
   }
   if ("code2" in overrides && !overrides.code2) {
     merged.branch = "";
@@ -260,8 +274,8 @@ function tableHtml(rows, columns) {
       const cells = columns
         .map((c) => {
           const key = c.key || c;
-          const val = row[key];
-          return `<td>${esc(typeof val === "number" ? val.toLocaleString() : val)}</td>`;
+          const val = c.format ? c.format(row) : row[key];
+          return `<td>${esc(typeof val === "number" ? val.toLocaleString() : val ?? "")}</td>`;
         })
         .join("");
       return `<tr>${cells}</tr>`;
@@ -314,7 +328,11 @@ function renderCompare() {
   if (tab === "기번") monthData = attachBranchName(rows, monthData, month);
 
   const labels = monthData.map((r) =>
-    tab === "기번" && r.지점이름 ? `${r.기번} (${r.지점이름})` : r[cfg.col],
+    tab === "기번" && r.지점이름
+      ? `${r.기번} (${r.지점이름})`
+      : tab === "지점"
+        ? branchDisplayLabel(rows, r[cfg.col], "지점명", "기번", month)
+        : r[cfg.col],
   );
   const values = monthData.map((r) => r.장애건수);
 
@@ -337,7 +355,7 @@ function renderCompare() {
     const dailyOpts = monthData
       .map(
         (r) =>
-          `<option value="${esc(r.지점명)}"${r.지점명 === dailyEntity ? " selected" : ""}>${esc(r.지점명)}</option>`,
+          `<option value="${esc(r.지점명)}"${r.지점명 === dailyEntity ? " selected" : ""}>${esc(branchDisplayLabel(rows, r.지점명, "지점명", "기번", month))} (${r.장애건수})</option>`,
       )
       .join("");
     dailySection = `
@@ -354,7 +372,7 @@ function renderCompare() {
       const { rows: dailyRows } = dailyTrend(rows, month, "지점명", entities);
       const days = [...new Set(dailyRows.map((r) => r.일))].sort((a, b) => a - b);
       const series = entities.map((ent) => ({
-        name: ent,
+        name: branchDisplayLabel(rows, ent, "지점명", "기번", month),
         y: days.map((d) => dailyRows.find((r) => r.일 === d && r.지점명 === ent)?.장애건수 || 0),
       }));
       renderLineChart(document.getElementById("chart-daily"), days, series, `${month} 일별 추이`);
@@ -392,7 +410,14 @@ function renderCompare() {
     <div id="chart-compare" class="chart-box"></div>
     <h3>TOP 목록</h3>
     ${tableHtml(monthData, [
-      { key: cfg.col, label: tab },
+      {
+        key: cfg.col,
+        label: tab,
+        format:
+          tab === "지점"
+            ? (row) => branchDisplayLabel(rows, row[cfg.col], "지점명", "기번", month)
+            : undefined,
+      },
       ...(tab === "기번" ? [{ key: "지점이름", label: "지점" }] : []),
       { key: "장애건수", label: "장애건수" },
     ])}
@@ -402,13 +427,19 @@ function renderCompare() {
       navType: cfg.navType,
       options: monthData.map((r) => String(r[cfg.col])),
       selectedValue: monthData[0] ? String(monthData[0][cfg.col]) : "",
+      rows,
     })}
   `;
 }
 
 function flowEntityDisplay(value, col, rows, month = null) {
-  if (col !== "기번") return String(value);
-  return formatDeviceLabel(value, primaryBranchForDevice(rows, value, "기번", "지점명", month));
+  if (col === "기번") {
+    return formatDeviceLabel(value, primaryBranchForDevice(rows, value, "기번", "지점명", month));
+  }
+  if (col === "지점명") {
+    return branchDisplayLabel(rows, value, "지점명", "기번", month);
+  }
+  return String(value);
 }
 
 function flowDisplayLabel(values, col, rows, month = null) {
@@ -528,6 +559,7 @@ function renderFlow() {
       options: selectedValues.length ? selectedValues : options.map((o) => String(o.value)),
       selectedValue: selectedValues[0] || options[0]?.value || "",
       excludePage: "flow",
+      rows,
     })}
   `;
 }
@@ -545,6 +577,7 @@ function renderCode() {
   const device = state.params.get("device") || "";
   const scopeBranch = state.params.get("scope_branch") || "";
   let scopeDevice = state.params.get("scope_device") || "";
+  const faultView = state.params.get("fault_view") || "daily";
 
   const typeScope = drilldown(rows, { month, faultType });
   const branchFilterOptions = distribution(typeScope, "지점명", 50);
@@ -573,7 +606,7 @@ function renderCode() {
         <label>모듈 <select name="fault_type">${FAULT_TYPES.map((t) => `<option value="${esc(t)}"${t === faultType ? " selected" : ""}>${esc(t)}</option>`).join("")}</select></label>
         <label>지점 <select name="scope_branch">
           <option value="">(전체)</option>
-          ${branchFilterOptions.map((d) => `<option value="${esc(d.지점명)}"${d.지점명 === scopeBranch ? " selected" : ""}>${esc(d.지점명)} (${d.장애건수})</option>`).join("")}
+          ${branchFilterOptions.map((d) => `<option value="${esc(d.지점명)}"${d.지점명 === scopeBranch ? " selected" : ""}>${esc(branchDisplayLabel(rows, d.지점명, "지점명", "기번", month))} (${d.장애건수})</option>`).join("")}
         </select></label>
         <label>기번 <select name="scope_device">
           <option value="">(전체)</option>
@@ -586,7 +619,9 @@ function renderCode() {
   const faultList = enrichFaultDistribution(moduleScope, distribution(moduleScope, "세부장애", 30));
   const selectedFault = faultList.find((d) => String(d.세부장애) === String(detailCode));
   const step4Scope = detailCode ? drilldown(typeScope, { detailCode }) : [];
-  const branchListStep4 = detailCode ? distribution(step4Scope, "지점명", 20) : [];
+  const branchListStep4 = detailCode
+    ? enrichBranchList(getRows(), distribution(step4Scope, "지점명", 20), "지점명", month)
+    : [];
   const detailScopeModule = detailCode ? drilldown(moduleScope, { detailCode }) : moduleScope;
   const code2List = detailCode
     ? distribution(detailScopeModule, "장애코드2", 20).filter((d) => d.장애코드2)
@@ -604,6 +639,15 @@ function renderCode() {
     ? `${detailCode} · ${selectedFault.장애내용 || ""} — 지점 TOP20`.replace(/ · —/, " —")
     : `${detailCode} — 지점 TOP20`;
 
+  let faultTrendScope = drilldown(rows, { faultType });
+  if (scopeBranch) faultTrendScope = drilldown(faultTrendScope, { branch: scopeBranch });
+  if (scopeDevice) faultTrendScope = drilldown(faultTrendScope, { device: scopeDevice });
+  if (detailCode) faultTrendScope = drilldown(faultTrendScope, { detailCode });
+
+  const step3Title = selectedFault
+    ? `${detailCode} · ${selectedFault.장애내용 || ""} — 장애 추이`.replace(/ · —/, " —")
+    : `${detailCode} — 장애 추이`;
+
   queueMicrotask(() => {
     if (faultList.length) {
       const faultLabels = faultList
@@ -617,6 +661,28 @@ function renderCode() {
         `${faultType} — 세부장애 분포 (건수)`,
       );
     }
+    if (detailCode && faultTrendScope.length) {
+      const trendEl = document.getElementById("chart-code-fault-trend");
+      if (faultView === "monthly") {
+        const monthly = faultMonthlyTrend(faultTrendScope);
+        renderLineChart(
+          trendEl,
+          monthly.map((r) => r.연월),
+          [{ name: "장애건수", y: monthly.map((r) => r.장애건수) }],
+          `${step3Title} (월별)`,
+          "연월",
+        );
+      } else {
+        const daily = faultDailyTrend(faultTrendScope, month);
+        renderLineChart(
+          trendEl,
+          daily.map((r) => r.일),
+          [{ name: "장애건수", y: daily.map((r) => r.장애건수) }],
+          `${step3Title} (${month} 일별)`,
+          "일",
+        );
+      }
+    }
     if (code2List.length) {
       renderBarChart(
         document.getElementById("chart-code2"),
@@ -628,7 +694,7 @@ function renderCode() {
     if (branchListStep4.length) {
       renderBarChart(
         document.getElementById("chart-code-branch"),
-        branchListStep4.map((d) => String(d.지점명)).slice().reverse(),
+        branchListStep4.map((d) => String(d.지점표시 || d.지점명)).slice().reverse(),
         branchListStep4.map((d) => d.장애건수).slice().reverse(),
         step4Title,
         "장애건수",
@@ -638,7 +704,7 @@ function renderCode() {
     if (deviceList.length) {
       renderBarChart(
         document.getElementById("chart-code-device"),
-        deviceList.map((d) => deviceWithBranch({ 기번: d.기번, 지점명: activeBranch })).slice().reverse(),
+        deviceList.map((d) => deviceWithBranch({ 기번: d.기번, 지점명: activeBranch }, rows)).slice().reverse(),
         deviceList.map((d) => d.장애건수).slice().reverse(),
         `${activeBranch} — 기번별 분포`,
       );
@@ -670,7 +736,7 @@ function renderCode() {
   const branchFilterOpts = branchFilterOptions
     .map(
       (d) =>
-        `<option value="${esc(d.지점명)}"${d.지점명 === scopeBranch ? " selected" : ""}>${esc(d.지점명)} (${d.장애건수})</option>`,
+        `<option value="${esc(d.지점명)}"${d.지점명 === scopeBranch ? " selected" : ""}>${esc(branchDisplayLabel(rows, d.지점명, "지점명", "기번", month))} (${d.장애건수})</option>`,
     )
     .join("");
   const deviceFilterOpts = deviceFilterOptions
@@ -711,7 +777,7 @@ function renderCode() {
                 const chipLabel = d.장애내용
                   ? `${d.세부장애} · ${d.장애내용} (${d.장애건수})`
                   : `${d.세부장애} (${d.장애건수})`;
-                return `<a class="chip${d.세부장애 === detailCode ? " active" : ""}" href="${codeHref({ detail: d.세부장애, code2: "", branch: "", device: "" })}">${esc(chipLabel)}</a>`;
+                return `<a class="chip${d.세부장애 === detailCode ? " active" : ""}" href="${codeHref({ detail: d.세부장애, code2: "", branch: "", device: "", fault_view: "daily" })}">${esc(chipLabel)}</a>`;
               })
               .join("")}
           </div>
@@ -725,6 +791,35 @@ function renderCode() {
     </section>
 
     ${
+      detailCode
+        ? `<section class="card" id="step3">
+            <h3>Step 3 · ${esc(step3Title)}</h3>
+            <p class="caption">선택한 세부장애의 장애 건수 추이 · 일별은 선택 연월 기준, 월별은 전체 기간 기준</p>
+            <form id="fault-view-form" class="inline-form card" onsubmit="return false">
+              <fieldset>
+                <legend>분석 보기</legend>
+                <label><input type="radio" name="fault_view" value="daily"${faultView === "daily" ? " checked" : ""}> 일별</label>
+                <label><input type="radio" name="fault_view" value="monthly"${faultView === "monthly" ? " checked" : ""}> 월별</label>
+              </fieldset>
+            </form>
+            ${
+              faultTrendScope.length
+                ? `<div id="chart-code-fault-trend" class="chart-box"></div>
+                   ${tableHtml(
+                     faultView === "monthly"
+                       ? faultMonthlyTrend(faultTrendScope)
+                       : faultDailyTrend(faultTrendScope, month),
+                     faultView === "monthly"
+                       ? [{ key: "연월", label: "연월" }, { key: "장애건수", label: "장애건수" }]
+                       : [{ key: "일", label: "일" }, { key: "장애건수", label: "장애건수" }],
+                   )}`
+                : `<div class="alert info">선택한 세부장애에 대한 추이 데이터가 없습니다.</div>`
+            }
+          </section>`
+        : ""
+    }
+
+    ${
       detailCode && branchListStep4.length
         ? `<section class="card" id="step4">
             <h3>Step 4 · ${esc(step4Title)}</h3>
@@ -736,12 +831,12 @@ function renderCode() {
                   ${branchListStep4
                     .map(
                       (d) =>
-                        `<a class="chip${d.지점명 === activeBranch ? " active" : ""}" href="${codeHref({ detail: detailCode, code2: "", branch: d.지점명, device: "" })}">${esc(d.지점명)} (${d.장애건수})</a>`,
+                        `<a class="chip${d.지점명 === activeBranch ? " active" : ""}" href="${codeHref({ detail: detailCode, code2: "", branch: d.지점명, device: "" })}">${esc(d.지점표시 || branchDisplayLabel(rows, d.지점명, "지점명", "기번", month))} (${d.장애건수})</a>`,
                     )
                     .join("")}
                 </div>
                 ${tableHtml(branchListStep4, [
-                  { key: "지점명", label: "지점명" },
+                  { key: "지점표시", label: "지점" },
                   { key: "장애건수", label: "장애건수" },
                 ])}
               </div>
@@ -755,7 +850,7 @@ function renderCode() {
     ${
       detailCode && code2List.length
         ? `<section class="card">
-            <h3>Step 3 · 장애코드2</h3>
+            <h3>장애코드2</h3>
             <div class="chip-row">
               ${code2List
                 .map(
@@ -775,12 +870,12 @@ function renderCode() {
     ${
       detailCode && activeBranch && deviceList.length
         ? `<section class="card" id="step5">
-            <h3>Step 5 · ${esc(activeBranch)} 기번별 분포</h3>
+            <h3>Step 5 · ${esc(branchDisplayLabel(rows, activeBranch, "지점명", "기번", month))} 기번별 분포</h3>
             <div class="chip-row">
               ${deviceList
                 .map(
                   (d) =>
-                    `<a class="chip${d.기번 === activeDevice ? " active" : ""}" href="${codeHref({ detail: detailCode, code2: activeCode2, branch: activeBranch, device: d.기번 })}">${esc(deviceWithBranch({ 기번: d.기번, 지점명: activeBranch }))} (${d.장애건수})</a>`,
+                    `<a class="chip${d.기번 === activeDevice ? " active" : ""}" href="${codeHref({ detail: detailCode, code2: activeCode2, branch: activeBranch, device: d.기번 })}">${esc(deviceWithBranch({ 기번: d.기번, 지점명: activeBranch }, rows))} (${d.장애건수})</a>`,
                 )
                 .join("")}
             </div>
@@ -812,11 +907,12 @@ function renderCode() {
             : faultList.slice(0, 10).map((d) => String(d.세부장애)),
       selectedValue: activeDevice || activeBranch || detailCode || faultList[0]?.세부장애 || "",
       excludePage: "code",
+      rows,
     })}
   `;
 }
 
-function deviceWithBranch(row) {
+function deviceWithBranch(row, rows = getRows()) {
   return row.기번표시 || formatDeviceLabel(row.기번, row.지점명);
 }
 
@@ -842,6 +938,7 @@ function renderPriority() {
     <div id="chart-priority" class="chart-box"></div>
     ${tableHtml(ranked, [
       { key: "기번표시", label: "기번 (지점)" },
+      { key: "지점표시", label: "지점" },
       { key: "기종", label: "기종" },
       { key: "최근3개월건수", label: "최근3개월" },
       { key: "전월대비증가율", label: "증가율(%)" },
@@ -853,6 +950,7 @@ function renderPriority() {
       options: ranked.map((r) => String(r.기번)),
       selectedValue: ranked[0] ? String(ranked[0].기번) : "",
       excludePage: "priority",
+      rows,
     })}
   `;
 }
@@ -924,7 +1022,7 @@ function bindForms() {
       month: fd.get("month"),
       fault_type: fd.get("fault_type"),
     };
-    for (const key of ["scope_branch", "scope_device", "detail", "code2", "branch", "device"]) {
+    for (const key of ["scope_branch", "scope_device", "detail", "code2", "branch", "device", "fault_view"]) {
       const val = fd.get(key);
       if (val) params[key] = val;
     }
@@ -939,6 +1037,13 @@ function bindForms() {
       delete params.scope_branch;
       delete params.scope_device;
     }
+    setRoute("code", params);
+  });
+  document.getElementById("fault-view-form")?.addEventListener("change", (e) => {
+    const target = e.target;
+    if (!(target instanceof HTMLInputElement) || target.name !== "fault_view") return;
+    const params = Object.fromEntries(state.params.entries());
+    params.fault_view = target.value;
     setRoute("code", params);
   });
   document.getElementById("upload-form")?.addEventListener("submit", async (e) => {
@@ -1018,7 +1123,16 @@ function render() {
   bindForms();
   bindNavActions();
   if (state.page === "code" && state.params.get("detail")) {
-    queueMicrotask(() => document.getElementById("step4")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    queueMicrotask(() => {
+      const scrollId = state.params.get("device")
+        ? null
+        : state.params.get("branch")
+          ? "step5"
+          : "step3";
+      if (scrollId) {
+        document.getElementById(scrollId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    });
   }
   loadBuildLabel().then((build) => {
     const meta = getMeta();

@@ -25,6 +25,7 @@
   {% set options = ranked_records | map(attribute='기번') | list %}
   {% set selected_value = ranked_records[0]['기번'] %}
   {% set exclude_page = 'priority' %}
+  {% set option_labels = priority_option_labels %}
   {% include '_nav_actions.html' %}
 {% endif %}
 {% endblock %}

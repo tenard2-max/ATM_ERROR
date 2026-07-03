@@ -3,7 +3,7 @@
   <label>{{ nav_type }} 선택
     <select class="nav-entity-select">
       {% for opt in options %}
-        <option value="{{ opt }}" {% if opt == selected_value %}selected{% endif %}>{{ opt }}</option>
+        <option value="{{ opt }}" {% if opt == selected_value %}selected{% endif %}>{{ (option_labels or {}).get(opt, opt) }}</option>
       {% endfor %}
     </select>
   </label>

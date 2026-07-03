@@ -18,7 +18,7 @@
 
   {% if nav_value %}
 
-    <div class="alert info">전체비교에서 전달: <strong>{{ nav_type }} = {{ nav_value }}</strong>{% if nav_month %} ({{ nav_month }}){% endif %}</div>
+    <div class="alert info">전체비교에서 전달: <strong>{{ nav_type }} = {{ nav_display or nav_value }}</strong>{% if nav_month %} ({{ nav_month }}){% endif %}</div>
 
   {% endif %}
 
@@ -184,6 +184,7 @@
       {% set options = selected_values if selected_values else options %}
       {% set selected_value = selected_values[0] if selected_values else (options[0] if options else '') %}
       {% set exclude_page = 'flow' %}
+      {% set option_labels = nav_option_labels %}
       {% include '_nav_actions.html' %}
     {% endif %}
 

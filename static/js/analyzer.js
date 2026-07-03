@@ -49,10 +49,13 @@ export function attachBranchName(rows, topRows, month, deviceCol = "기번", bra
     if (!counts) return "";
     return Object.entries(counts).sort((a, b) => b[1] - a[1])[0][0];
   }
-  return topRows.map((row) => ({
-    ...row,
-    지점이름: pickBranch(row[deviceCol]),
-  }));
+  return topRows.map((row) => {
+    const branch = pickBranch(row[deviceCol]);
+    return {
+      ...row,
+      지점이름: branchDisplayLabel(rows, branch, branchCol, deviceCol, month),
+    };
+  });
 }
 
 function branchCountsByDevice(rows, deviceCol = "기번", branchCol = "지점명") {
@@ -82,10 +85,59 @@ export function primaryBranchForDevice(rows, deviceId, deviceCol = "기번", bra
   return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
 }
 
+export function branchCodeFromDevice(deviceId) {
+  const text = String(deviceId ?? "").trim();
+  const idx = text.toUpperCase().indexOf("A");
+  return idx > 0 ? text.slice(0, idx) : "";
+}
+
+export function primaryBranchCodeForBranch(
+  rows,
+  branchName,
+  branchCol = "지점명",
+  deviceCol = "기번",
+  month = null,
+) {
+  let subset = rows.filter((r) => String(r[branchCol]) === String(branchName));
+  if (month) subset = subset.filter((r) => r.연월 === month);
+  const counts = new Map();
+  for (const row of subset) {
+    const code = branchCodeFromDevice(row[deviceCol]);
+    if (!code) continue;
+    counts.set(code, (counts.get(code) || 0) + 1);
+  }
+  if (counts.size) return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  const fallback = subset.find((r) => r.점번);
+  return fallback?.점번 ? String(fallback.점번).trim() : "";
+}
+
+export function formatBranchLabel(branchName, branchCode = "") {
+  const branch = String(branchName ?? "").trim();
+  const code = String(branchCode ?? "").trim();
+  if (!branch) return "";
+  return code ? `${branch}(${code})` : branch;
+}
+
+export function branchDisplayLabel(rows, branchName, branchCol = "지점명", deviceCol = "기번", month = null) {
+  const branch = String(branchName ?? "").trim();
+  if (!branch) return "";
+  const code = primaryBranchCodeForBranch(rows, branch, branchCol, deviceCol, month);
+  return formatBranchLabel(branch, code);
+}
+
+export function enrichBranchList(rows, items, branchCol = "지점명", month = null) {
+  return items.map((item) => ({
+    ...item,
+    지점표시: branchDisplayLabel(rows, item[branchCol], branchCol, "기번", month),
+  }));
+}
+
 export function formatDeviceLabel(deviceId, branchName) {
   const id = String(deviceId ?? "");
   const branch = String(branchName ?? "").trim();
-  return branch ? `${id} (${branch})` : id;
+  if (!branch) return id;
+  const branchLabel = formatBranchLabel(branch, branchCodeFromDevice(deviceId));
+  return `${id} (${branchLabel})`;
 }
 
 function contentCountsByDetail(rows, detailCol = "세부장애", contentCol = "장애내용") {
@@ -157,6 +209,32 @@ export function monthlyTrend(rows, entityCol, entityValue) {
   return counts.map((r) => ({ 연월: r.연월, 장애건수: r.장애건수 }));
 }
 
+export function faultDailyTrend(rows, month) {
+  const [year, mon] = month.split("-").map(Number);
+  const lastDay = new Date(year, mon, 0).getDate();
+  const subset = rows.filter((r) => r.연월 === month);
+  const map = new Map();
+  for (const row of subset) {
+    const day = new Date(row.발생일자).getDate();
+    if (!day) continue;
+    map.set(day, (map.get(day) || 0) + 1);
+  }
+  return Array.from({ length: lastDay }, (_, i) => ({
+    일: i + 1,
+    장애건수: map.get(i + 1) || 0,
+  }));
+}
+
+export function faultMonthlyTrend(rows) {
+  const counts = new Map();
+  for (const row of rows) {
+    counts.set(row.연월, (counts.get(row.연월) || 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0]))
+    .map(([연월, 장애건수]) => ({ 연월, 장애건수 }));
+}
+
 export function entityOptions(rows, entityCol, month = null) {
   let subset = rows;
   if (month) subset = subset.filter((r) => r.연월 === month);
@@ -174,6 +252,8 @@ export function entityOptions(rows, entityCol, month = null) {
           value,
           primaryBranchForDevice(rows, value, "기번", "지점명", month),
         );
+      } else if (entityCol === "지점명") {
+        display = branchDisplayLabel(rows, value, "지점명", "기번", month);
       }
       return { value, label: `${display} (${count.toLocaleString()}건)`, count };
     });
@@ -194,6 +274,7 @@ export function computePriority(rows, topN = PRIORITY_TOP_N) {
   const scoreMap = new Map();
   for (const [기번, 기종] of meta.entries()) {
     const 지점명 = primaryBranchForDevice(rows, 기번);
+    const 지점표시 = formatBranchLabel(지점명, branchCodeFromDevice(기번));
     const recentSum = deviceCounts
       .filter((r) => r.기번 === 기번 && recent.includes(r.연월))
       .reduce((s, r) => s + r.장애건수, 0);
@@ -206,6 +287,7 @@ export function computePriority(rows, topN = PRIORITY_TOP_N) {
       기번,
       기종,
       지점명,
+      지점표시,
       기번표시: formatDeviceLabel(기번, 지점명),
       최근3개월건수: recentSum,
       전월대비증가율: growth,

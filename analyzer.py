@@ -74,7 +74,15 @@ def attach_branch_name(
 
     branch_map = data.groupby(device_col)[branch_col].agg(_pick_branch)
     out = top_df.copy()
-    out[label] = out[device_col].map(branch_map).fillna("")
+    raw_names = out[device_col].map(branch_map).fillna("")
+    out[label] = [
+        format_branch_label(
+            b,
+            branch_code_from_device(d)
+            or primary_branch_code_for_branch(data, b, branch_col, device_col, selected_month),
+        )
+        for b, d in zip(raw_names, out[device_col], strict=False)
+    ]
 
     cols = [c for c in out.columns if c != label]
     insert_at = cols.index(device_col) + 1
@@ -96,10 +104,83 @@ def primary_branch_for_device(
     return str(modes.iloc[0]) if not modes.empty else str(subset[branch_col].iloc[0])
 
 
+def branch_code_from_device(device_id: str) -> str:
+    """기번에서 A 앞 숫자 접두사 추출 (예: 1253A58 → 1253)."""
+    text = str(device_id or "").strip()
+    idx = text.upper().find("A")
+    return text[:idx] if idx > 0 else ""
+
+
+def primary_branch_code_for_branch(
+    df: pd.DataFrame,
+    branch_name: str,
+    branch_col: str = "지점명",
+    device_col: str = "기번",
+    month: str | None = None,
+) -> str:
+    data = ensure_dataframe(df)
+    subset = data[data[branch_col].astype(str) == str(branch_name)]
+    if month and "연월" in subset.columns:
+        subset = subset[subset["연월"] == month]
+    if subset.empty:
+        return ""
+    codes = subset[device_col].astype(str).map(branch_code_from_device)
+    codes = codes[codes != ""]
+    if not codes.empty:
+        return str(codes.value_counts().index[0])
+    if "점번" in subset.columns:
+        points = subset["점번"].dropna().astype(str).str.strip()
+        if not points.empty:
+            return str(points.value_counts().index[0])
+    return ""
+
+
+def format_branch_label(branch_name: str, branch_code: str = "") -> str:
+    branch = str(branch_name or "").strip()
+    code = str(branch_code or "").strip()
+    if not branch:
+        return ""
+    return f"{branch}({code})" if code else branch
+
+
+def branch_display_label(
+    df: pd.DataFrame,
+    branch_name: str,
+    branch_col: str = "지점명",
+    device_col: str = "기번",
+    month: str | None = None,
+) -> str:
+    branch = str(branch_name or "").strip()
+    if not branch:
+        return ""
+    code = primary_branch_code_for_branch(df, branch, branch_col, device_col, month)
+    return format_branch_label(branch, code)
+
+
+def enrich_branch_display(
+    df: pd.DataFrame,
+    table_df: pd.DataFrame,
+    branch_col: str = "지점명",
+    display_col: str = "지점표시",
+    month: str | None = None,
+) -> pd.DataFrame:
+    out = table_df.copy()
+    if out.empty or branch_col not in out.columns:
+        return out
+    out[display_col] = out[branch_col].map(
+        lambda name: branch_display_label(df, name, branch_col, month=month)
+    )
+    return out
+
+
 def format_device_label(device_id: str, branch_name: str) -> str:
     device = str(device_id or "")
     branch = str(branch_name or "").strip()
-    return f"{device} ({branch})" if branch else device
+    if not branch:
+        return device
+    code = branch_code_from_device(device)
+    branch_fmt = format_branch_label(branch, code)
+    return f"{device} ({branch_fmt})" if branch_fmt else device
 
 
 def primary_fault_content(
@@ -299,6 +380,8 @@ def entity_select_options(
         display = value
         if key_col == "기번":
             display = format_device_label(value, primary_branch_for_device(df, value))
+        elif key_col == "지점명":
+            display = branch_display_label(df, value, key_col, month=month)
         label = f"{display} ({count:,}건)" if show_count else display
         options.append({"value": value, "label": label, "count": count})
     return options
@@ -554,12 +637,24 @@ def compute_priority_ranking(
         .reset_index(drop=True)
     )
     ranked.insert(0, "순위", range(1, len(ranked) + 1))
+    ranked["지점표시"] = ranked.apply(
+        lambda r: format_branch_label(
+            r["지점명"],
+            branch_code_from_device(r["기번"])
+            or primary_branch_code_for_branch(data, r["지점명"]),
+        ),
+        axis=1,
+    )
+    ranked["기번표시"] = ranked.apply(
+        lambda r: format_device_label(r["기번"], r["지점명"]),
+        axis=1,
+    )
     return ranked[
         [
             "순위",
-            "기번",
+            "기번표시",
+            "지점표시",
             "기종",
-            "지점명",
             "위험도점수",
             "최근3개월건수",
             "전월대비증가율",

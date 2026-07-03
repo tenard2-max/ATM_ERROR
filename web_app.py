@@ -37,6 +37,7 @@ from app_common import (
 from chart_utils import (
     daily_line_figure,
     daily_multi_line_figure,
+    day_count_line_figure,
     distribution_bar_figure,
     figure_html,
     five_day_flow_figure,
@@ -112,6 +113,32 @@ def table_html(df: pd.DataFrame) -> str:
     if df is None or df.empty:
         return '<p class="muted">표시할 데이터가 없습니다.</p>'
     return df.to_html(index=False, classes="data-table", border=0)
+
+
+def nav_entity_label(
+    df: pd.DataFrame,
+    nav_type: str,
+    value: str,
+    month: str | None = None,
+) -> str:
+    if not value:
+        return ""
+    if nav_type == "지점":
+        return analyzer.branch_display_label(df, value, month=month)
+    if nav_type == "기번":
+        return analyzer.format_device_label(
+            value, analyzer.primary_branch_for_device(df, value)
+        )
+    return str(value)
+
+
+def nav_option_labels(
+    df: pd.DataFrame,
+    nav_type: str,
+    options: list[str],
+    month: str | None = None,
+) -> dict[str, str]:
+    return {str(opt): nav_entity_label(df, nav_type, str(opt), month) for opt in options}
 
 
 def _current_app_url() -> str:
@@ -212,10 +239,15 @@ def a_compare():
                 month_data = analyzer.attach_branch_name(
                     df, month_data, selected_month=selected_month
                 )
+            if tab_key == "지점":
+                month_data = analyzer.enrich_branch_display(
+                    df, month_data, "지점명", "지점표시", selected_month
+                )
+            plot_col = "지점표시" if tab_key == "지점" and "지점표시" in month_data.columns else col_name
             chart_html = figure_html(
                 top10_bar_figure(
                     month_data,
-                    col_name,
+                    plot_col,
                     title_suffix,
                     suffix_col="지점이름" if tab_key == "기번" else None,
                 )
@@ -226,7 +258,7 @@ def a_compare():
                 daily_options = [
                     {
                         "value": str(row[col_name]),
-                        "label": f"{row[col_name]} ({int(row['장애건수']):,}건)",
+                        "label": f"{row['지점표시']} ({int(row['장애건수']):,}건)",
                         "count": int(row["장애건수"]),
                     }
                     for _, row in month_data.iterrows()
@@ -238,7 +270,16 @@ def a_compare():
                 df, selected_month, col_name, labels
             )
             plot_label_col = col_name
-            if tab_key == "기번" and "지점이름" in month_data.columns:
+            if tab_key == "지점" and "지점표시" in month_data.columns:
+                name_map = {
+                    row[col_name]: row["지점표시"]
+                    for _, row in month_data.iterrows()
+                    if row.get("지점표시")
+                }
+                daily_df = daily_df.copy()
+                daily_df["표시명"] = daily_df[col_name].map(name_map).fillna(daily_df[col_name])
+                plot_label_col = "표시명"
+            elif tab_key == "기번" and "지점이름" in month_data.columns:
                 name_map = {
                     row[col_name]: f"{row[col_name]} ({row['지점이름']})"
                     for _, row in month_data.iterrows()
@@ -252,7 +293,7 @@ def a_compare():
             if tab_key == "지점" and selected_daily:
                 chart_daily_df = daily_df[daily_df[col_name] == selected_daily].copy()
                 daily_title = (
-                    f"{selected_month} — {selected_daily} 일별 장애 추이 (1~{last_day}일)"
+                    f"{selected_month} — {analyzer.branch_display_label(df, selected_daily, month=selected_month)} 일별 장애 추이 (1~{last_day}일)"
                 )
             else:
                 daily_title = (
@@ -273,7 +314,17 @@ def a_compare():
 
         sections[tab_key] = {
             "month_data": month_data if not month_data.empty else pd.DataFrame(),
-            "table_html": table_html(month_data) if not month_data.empty else "",
+            "table_html": (
+                table_html(
+                    month_data.drop(columns=["지점명"], errors="ignore").rename(
+                        columns={"지점표시": "지점"}
+                    )
+                    if tab_key == "지점" and "지점표시" in month_data.columns
+                    else month_data
+                )
+                if not month_data.empty
+                else ""
+            ),
             "chart_html": chart_html,
             "daily_html": daily_html,
             "daily_options": daily_options,
@@ -281,6 +332,7 @@ def a_compare():
             "last_day": last_day,
             "labels": labels,
             "nav_type": cfg["nav_type"],
+            "option_labels": nav_option_labels(df, cfg["nav_type"], labels, selected_month),
             "title_suffix": title_suffix,
         }
 
@@ -490,11 +542,25 @@ def _build_analysis_context(df: pd.DataFrame, selected_month: str | None) -> dic
     def tab_data(key: str, col: str, all_items: bool) -> dict[str, Any]:
         data = aggregates[key]
         if all_items:
-            md = data[data["연월"] == selected_month]
+            md = data[data["연월"] == selected_month].copy()
         else:
             top10 = analyzer.top_n_by_month(data, col)
-            md = top10[top10["연월"] == selected_month]
-        return {"table_html": table_html(md), "empty": md.empty}
+            md = top10[top10["연월"] == selected_month].copy()
+        if md.empty:
+            return {"table_html": "", "empty": True}
+        if key == "지점":
+            md = analyzer.enrich_branch_display(
+                filtered_df, md, "지점명", "지점표시", selected_month
+            )
+            display = md.drop(columns=["지점명"], errors="ignore").rename(
+                columns={"지점표시": "지점"}
+            )
+        elif key == "기번":
+            md = analyzer.attach_branch_name(filtered_df, md, selected_month=selected_month)
+            display = md.rename(columns={"지점이름": "지점"})
+        else:
+            display = md
+        return {"table_html": table_html(display), "empty": False}
 
     return {
         "empty": False,
@@ -655,12 +721,16 @@ def flow():
 
     selected_value = selected_values[0] if selected_values else ""
 
-    display_values = [
-        analyzer.format_device_label(v, analyzer.primary_branch_for_device(df, v))
-        if key_col == "기번"
-        else v
-        for v in selected_values
-    ]
+    display_values = []
+    for v in selected_values:
+        if key_col == "기번":
+            display_values.append(
+                analyzer.format_device_label(v, analyzer.primary_branch_for_device(df, v))
+            )
+        elif key_col == "지점명":
+            display_values.append(analyzer.branch_display_label(df, v, month=flow_month))
+        else:
+            display_values.append(v)
     label_short = ", ".join(display_values[:3])
     if len(selected_values) > 3:
         label_short += f" 외 {len(selected_values) - 3}개"
@@ -711,7 +781,9 @@ def flow():
                 flow_table_html = table_html(monthly_data) if not monthly_data.empty else ""
             else:
                 name_map = (
-                    dict(zip(selected_values, display_values)) if key_col == "기번" else None
+                    dict(zip(selected_values, display_values))
+                    if key_col in ("기번", "지점명")
+                    else None
                 )
                 flow_html = figure_html(
                     multi_entity_monthly_figure(
@@ -744,6 +816,10 @@ def flow():
                             x, analyzer.primary_branch_for_device(df, x)
                         )
                     )
+                elif key_col == "지점명":
+                    plot_df[key_col] = plot_df[key_col].map(
+                        lambda x: analyzer.branch_display_label(df, x, month=flow_month)
+                    )
                 flow_html = figure_html(
                     daily_multi_line_figure(plot_df, key_col, chart_title, last_day)
                 )
@@ -770,6 +846,7 @@ def flow():
         empty=False,
         nav_type=nav_type,
         nav_value=nav_value,
+        nav_display=nav_entity_label(df, nav_type, nav_value or "", nav_month) if nav_value else "",
         nav_month=nav_month,
         mode_labels=mode_labels,
         selected_mode=selected_mode,
@@ -789,6 +866,12 @@ def flow():
         bucket_table_html=flow_table_html,
         view=view,
         flow_month=flow_month,
+        nav_option_labels=nav_option_labels(
+            df,
+            target_type,
+            selected_values if selected_values else options,
+            flow_month,
+        ),
         entity_months=entity_months,
         last_day=last_day,
         month_total=month_total,
@@ -868,6 +951,9 @@ def code_analysis():
     scope_device = request.args.get("scope_device", "")
 
     branch_filter_list = drilldown.distribution(type_scope, "지점명", top_n=50)
+    branch_filter_list = analyzer.enrich_branch_display(
+        type_scope, branch_filter_list, "지점명", "지점표시", selected_month
+    )
     branch_filter_rows = (
         branch_filter_list.to_dict("records") if not branch_filter_list.empty else []
     )
@@ -909,12 +995,52 @@ def code_analysis():
         if not fault_rows.empty:
             selected_fault_content = str(fault_rows.iloc[0].get("장애내용", "") or "")
 
+    fault_view = request.args.get("fault_view", "daily")
+    if fault_view not in ("daily", "monthly"):
+        fault_view = "daily"
+
+    fault_trend_scope = drilldown.filter_scope(grouped, ai_type=selected_type)
+    if scope_branch:
+        fault_trend_scope = drilldown.filter_scope(fault_trend_scope, 지점명=scope_branch)
+    if scope_device:
+        fault_trend_scope = drilldown.filter_scope(fault_trend_scope, 기번=scope_device)
+    if selected_fault:
+        fault_trend_scope = drilldown.filter_scope(fault_trend_scope, 세부장애=selected_fault)
+
+    fault_trend_title = (
+        f"{selected_fault} · {selected_fault_content} — 장애 추이"
+        if selected_fault and selected_fault_content
+        else f"{selected_fault} — 장애 추이"
+        if selected_fault
+        else ""
+    )
+    fault_trend_chart = ""
+    fault_trend_table_html = ""
+    if selected_fault and not fault_trend_scope.empty:
+        if fault_view == "monthly":
+            fault_trend_df = drilldown.monthly_trend_all(fault_trend_scope)
+            fault_trend_chart = figure_html(
+                trend_line_figure(fault_trend_df, f"{fault_trend_title} (월별)")
+            )
+        else:
+            fault_trend_df = drilldown.daily_trend_in_month(fault_trend_scope, selected_month)
+            fault_trend_chart = figure_html(
+                day_count_line_figure(
+                    fault_trend_df,
+                    f"{fault_trend_title} ({selected_month} 일별)",
+                )
+            )
+        fault_trend_table_html = table_html(fault_trend_df)
+
     branch_list = pd.DataFrame()
     if selected_fault:
         branch_list = drilldown.distribution(
             drilldown.filter_scope(type_scope, 세부장애=selected_fault),
             "지점명",
             top_n=20,
+        )
+        branch_list = analyzer.enrich_branch_display(
+            type_scope, branch_list, "지점명", "지점표시", selected_month
         )
 
     scope = analysis_scope
@@ -944,6 +1070,11 @@ def code_analysis():
         )
         branch_scope_count = len(branch_scope)
         device_list = drilldown.distribution(branch_scope, "기번", top_n=20)
+        if not device_list.empty:
+            device_list = device_list.copy()
+            device_list["기번표시"] = device_list["기번"].map(
+                lambda d: analyzer.format_device_label(d, selected_branch)
+            )
         device_options = device_list["기번"].tolist() if not device_list.empty else []
         if selected_device and selected_device not in device_options:
             selected_device = ""
@@ -956,6 +1087,22 @@ def code_analysis():
 
     daily = drilldown.daily_trend(scope) if selected_device else pd.DataFrame()
 
+    branch_list_html = ""
+    if not branch_list.empty:
+        branch_list_html = table_html(
+            branch_list.drop(columns=["지점명"], errors="ignore").rename(
+                columns={"지점표시": "지점"}
+            )
+        )
+
+    device_list_html = ""
+    if not device_list.empty:
+        device_list_html = table_html(
+            device_list.drop(columns=["기번"], errors="ignore").rename(
+                columns={"기번표시": "기번"}
+            )
+        )
+
     def build_url(**kwargs):
         params = {
             "month": selected_month,
@@ -966,6 +1113,7 @@ def code_analysis():
             "code2": selected_code2,
             "branch": selected_branch,
             "device": selected_device,
+            "fault_view": fault_view,
         }
         params.update(kwargs)
         return url_for("code_analysis", **{k: v for k, v in params.items() if v})
@@ -1001,6 +1149,9 @@ def code_analysis():
         else "",
         selected_fault=selected_fault,
         selected_fault_content=selected_fault_content,
+        fault_view=fault_view,
+        fault_trend_chart=fault_trend_chart,
+        fault_trend_table_html=fault_trend_table_html,
         code2_list=code2_list,
         code2_chart=figure_html(
             distribution_bar_figure(code2_list, "장애코드2", f"{selected_fault} — 장애코드2 분포")
@@ -1009,6 +1160,7 @@ def code_analysis():
         else "",
         selected_code2=selected_code2,
         branch_list=branch_list,
+        branch_list_html=branch_list_html,
         branch_chart=figure_html(
             distribution_bar_figure(
                 branch_list,
@@ -1017,15 +1169,26 @@ def code_analysis():
                 if selected_fault_content
                 else f"{selected_fault} — 지점 TOP20",
                 top_n=20,
+                display_col="지점표시",
             )
         )
         if not branch_list.empty
         else "",
         selected_branch=selected_branch,
+        selected_branch_display=(
+            analyzer.branch_display_label(type_scope, selected_branch, month=selected_month)
+            if selected_branch
+            else ""
+        ),
         device_list=device_list,
+        device_list_html=device_list_html,
         device_chart=figure_html(
             distribution_bar_figure(
-                device_list, "기번", f"{selected_branch} — 지점별 분포", top_n=20
+                device_list,
+                "기번",
+                f"{analyzer.branch_display_label(type_scope, selected_branch, month=selected_month) if selected_branch else ''} — 기번별 분포",
+                top_n=20,
+                display_col="기번표시",
             )
         )
         if not device_list.empty
@@ -1085,9 +1248,8 @@ def priority():
         chart_html = figure_html(
             top10_bar_figure(
                 chart_df,
-                "기번",
+                "기번표시",
                 f"위험도 TOP{len(ranked)} (기번 · 지점)",
-                suffix_col="지점명",
             )
         )
 
@@ -1098,7 +1260,12 @@ def priority():
         ranked_html=table_html(ranked),
         chart_html=chart_html,
         top_n=top_n,
-        latest_month=sorted(df["연월"].unique())[-1],
+        latest_month=sorted(df["연월"].unique())[-1] if not df.empty else "",
+        priority_option_labels=(
+            dict(zip(ranked["기번"].astype(str), ranked["기번표시"].astype(str)))
+            if not ranked.empty and "기번표시" in ranked.columns
+            else {}
+        ),
     )
 
 

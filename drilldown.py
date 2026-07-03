@@ -79,6 +79,37 @@ def daily_trend(df: pd.DataFrame) -> pd.DataFrame:
     )
 
 
+def daily_trend_in_month(df: pd.DataFrame, month: str) -> pd.DataFrame:
+    """선택 연월의 일별(1~말일) 장애 건수."""
+    import calendar
+
+    if df.empty:
+        return pd.DataFrame(columns=["일", "장애건수"])
+    work = df[df["연월"] == month].copy()
+    year, mon = month.split("-")
+    last_day = calendar.monthrange(int(year), int(mon))[1]
+    if work.empty:
+        return pd.DataFrame({"일": range(1, last_day + 1), "장애건수": [0] * last_day})
+    work["일"] = pd.to_datetime(work["발생일자"], errors="coerce").dt.day
+    counts = work.groupby("일").size().reset_index(name="장애건수")
+    full = pd.DataFrame({"일": range(1, last_day + 1)})
+    out = full.merge(counts, on="일", how="left").fillna(0)
+    out["장애건수"] = out["장애건수"].astype(int)
+    return out
+
+
+def monthly_trend_all(df: pd.DataFrame) -> pd.DataFrame:
+    """전체 기간 월별 장애 건수."""
+    if df.empty:
+        return pd.DataFrame(columns=["연월", "장애건수"])
+    return (
+        df.groupby("연월")
+        .size()
+        .reset_index(name="장애건수")
+        .sort_values("연월")
+    )
+
+
 def list_ai_types(df: pd.DataFrame) -> list[str]:
     present = {
         normalize_fault_type(t)

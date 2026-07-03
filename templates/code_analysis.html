@@ -35,7 +35,7 @@
       <select name="scope_branch" onchange="this.form.scope_device.value=''; this.form.submit()">
         <option value="">(전체)</option>
         {% for row in branch_filter_rows %}
-          <option value="{{ row['지점명'] }}" {% if row['지점명'] == scope_branch %}selected{% endif %}>{{ row['지점명'] }} ({{ "{:,}".format(row['장애건수']|int) }})</option>
+          <option value="{{ row['지점명'] }}" {% if row['지점명'] == scope_branch %}selected{% endif %}>{{ row['지점표시'] }} ({{ "{:,}".format(row['장애건수']|int) }})</option>
         {% endfor %}
       </select>
     </label>
@@ -52,6 +52,7 @@
     {% if selected_code2 %}<input type="hidden" name="code2" value="{{ selected_code2 }}">{% endif %}
     {% if selected_branch %}<input type="hidden" name="branch" value="{{ selected_branch }}">{% endif %}
     {% if selected_device %}<input type="hidden" name="device" value="{{ selected_device }}">{% endif %}
+    {% if selected_fault %}<input type="hidden" name="fault_view" value="{{ fault_view }}">{% endif %}
   </form>
 
   <section class="card">
@@ -74,7 +75,7 @@
         <div>
           <div class="chip-row">
             {% for _, row in fault_list.iterrows() %}
-              <a href="{{ build_url(fault=row['세부장애'], code2='', branch='', device='') }}#step4" class="chip {% if row['세부장애'] == selected_fault %}active{% endif %}">
+              <a href="{{ build_url(fault=row['세부장애'], code2='', branch='', device='', fault_view='daily') }}#step3" class="chip {% if row['세부장애'] == selected_fault %}active{% endif %}">
                 {{ row['세부장애'] }}{% if row['장애내용'] %} · {{ row['장애내용'] }}{% endif %} ({{ "{:,}".format(row['장애건수']|int) }})
               </a>
             {% endfor %}
@@ -82,6 +83,40 @@
           {{ fault_list.to_html(index=False, classes='data-table', border=0)|safe }}
         </div>
       </div>
+    </section>
+  {% endif %}
+
+  {% if selected_fault %}
+    <section class="card" id="step3">
+      <h3>Step 3 · {{ selected_fault }}{% if selected_fault_content %} · {{ selected_fault_content }}{% endif %} — 장애 추이</h3>
+      <p class="caption">선택한 세부장애의 장애 건수 추이 · 일별은 선택 연월 기준, 월별은 전체 기간 기준</p>
+      <form method="get" class="inline-form card">
+        <label>분석 연월
+          <select name="month">
+            {% for m in months %}
+              <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <input type="hidden" name="ai_type" value="{{ selected_type }}">
+        {% if scope_branch %}<input type="hidden" name="scope_branch" value="{{ scope_branch }}">{% endif %}
+        {% if scope_device %}<input type="hidden" name="scope_device" value="{{ scope_device }}">{% endif %}
+        <input type="hidden" name="fault" value="{{ selected_fault }}">
+        {% if selected_code2 %}<input type="hidden" name="code2" value="{{ selected_code2 }}">{% endif %}
+        {% if selected_branch %}<input type="hidden" name="branch" value="{{ selected_branch }}">{% endif %}
+        {% if selected_device %}<input type="hidden" name="device" value="{{ selected_device }}">{% endif %}
+        <fieldset>
+          <legend>분석 보기</legend>
+          <label><input type="radio" name="fault_view" value="daily" {% if fault_view == 'daily' %}checked{% endif %} onchange="this.form.submit()"> 일별</label>
+          <label><input type="radio" name="fault_view" value="monthly" {% if fault_view == 'monthly' %}checked{% endif %} onchange="this.form.submit()"> 월별</label>
+        </fieldset>
+      </form>
+      {% if fault_trend_chart %}
+        <div class="chart-box">{{ fault_trend_chart|safe }}</div>
+        {{ fault_trend_table_html|safe }}
+      {% else %}
+        <div class="alert info">선택한 세부장애에 대한 추이 데이터가 없습니다.</div>
+      {% endif %}
     </section>
   {% endif %}
 
@@ -94,10 +129,10 @@
         <div>
           <div class="chip-row">
             {% for _, row in branch_list.iterrows() %}
-              <a href="{{ build_url(branch=row['지점명'], device='') }}#step5" class="chip {% if row['지점명'] == selected_branch %}active{% endif %}">{{ row['지점명'] }} ({{ "{:,}".format(row['장애건수']|int) }})</a>
+              <a href="{{ build_url(branch=row['지점명'], device='') }}#step5" class="chip {% if row['지점명'] == selected_branch %}active{% endif %}">{{ row['지점표시'] }} ({{ "{:,}".format(row['장애건수']|int) }})</a>
             {% endfor %}
           </div>
-          {{ branch_list.to_html(index=False, classes='data-table', border=0)|safe }}
+          {{ branch_list_html|safe }}
         </div>
       </div>
     </section>
@@ -109,7 +144,7 @@
 
   {% if selected_fault and not code2_list.empty %}
     <section class="card">
-      <h3>Step 3. 장애코드2</h3>
+      <h3>장애코드2</h3>
       <div class="chip-row">
         {% for c in code2_list['장애코드2'] %}
           <a href="{{ build_url(code2=c, branch='', device='') }}" class="chip {% if c == selected_code2 %}active{% endif %}">{{ c }}</a>
@@ -124,19 +159,19 @@
 
   {% if selected_branch %}
     <section class="card" id="step5">
-      <h3>Step 5. 지점별 분포 — {{ selected_branch }} ({{ "{:,}".format(branch_scope_count) }}건)</h3>
+      <h3>Step 5. 지점별 분포 — {{ selected_branch_display }} ({{ "{:,}".format(branch_scope_count) }}건)</h3>
       <p class="caption">선택 지점 내 기번별 장애 분포</p>
       {% if device_list.empty %}
         <div class="alert info">선택 지점에 표시할 기번 데이터가 없습니다.</div>
       {% else %}
         <div class="chip-row">
-          {% for d in device_list['기번'] %}
-            <a href="{{ build_url(device=d) }}#step5" class="chip {% if d == selected_device %}active{% endif %}">{{ d }}</a>
+          {% for _, row in device_list.iterrows() %}
+            <a href="{{ build_url(device=row['기번']) }}#step5" class="chip {% if row['기번'] == selected_device %}active{% endif %}">{{ row['기번표시'] }}</a>
           {% endfor %}
         </div>
         <div class="grid-2">
           <div class="chart-box">{{ device_chart|safe }}</div>
-          <div>{{ device_list.to_html(index=False, classes='data-table', border=0)|safe }}</div>
+          <div>{{ device_list_html|safe }}</div>
         </div>
       {% endif %}
     </section>
@@ -161,6 +196,7 @@
     {% set options = [selected_device] %}
     {% set selected_value = selected_device %}
     {% set exclude_page = 'code' %}
+    {% set option_labels = {selected_device: device_list.loc[device_list['기번'] == selected_device, '기번표시'].iloc[0] if not device_list.empty and selected_device in device_list['기번'].tolist() else selected_device} %}
     {% include '_nav_actions.html' %}
   {% elif selected_branch %}
     {% set month = selected_month %}
@@ -168,6 +204,7 @@
     {% set options = [selected_branch] %}
     {% set selected_value = selected_branch %}
     {% set exclude_page = 'code' %}
+    {% set option_labels = {selected_branch: selected_branch_display} %}
     {% include '_nav_actions.html' %}
   {% elif not fault_list.empty %}
     {% set month = selected_month %}
