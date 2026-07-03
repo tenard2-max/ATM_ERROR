@@ -897,23 +897,38 @@ def code_analysis():
 
     fault_list = analyzer.enrich_fault_distribution(scope, drilldown.distribution(scope, "세부장애"))
     fault_options = fault_list["세부장애"].tolist() if not fault_list.empty else []
-    selected_fault = request.args.get("fault") or (
-        link_fault if link_fault in fault_options else (fault_options[0] if fault_options else "")
-    )
-    if selected_fault not in fault_options and fault_options:
-        selected_fault = fault_options[0]
+    selected_fault = request.args.get("fault", "")
+    if not selected_fault and link_fault and link_fault in fault_options:
+        selected_fault = link_fault
+    if selected_fault and selected_fault not in fault_options:
+        selected_fault = ""
+
+    selected_fault_content = ""
+    if selected_fault and not fault_list.empty:
+        fault_rows = fault_list[fault_list["세부장애"] == selected_fault]
+        if not fault_rows.empty:
+            selected_fault_content = str(fault_rows.iloc[0].get("장애내용", "") or "")
+
+    branch_list = pd.DataFrame()
+    if selected_fault:
+        branch_list = drilldown.distribution(
+            drilldown.filter_scope(type_scope, 세부장애=selected_fault),
+            "지점명",
+            top_n=20,
+        )
+
+    scope = analysis_scope
     if selected_fault:
         scope = drilldown.filter_scope(scope, 세부장애=selected_fault)
 
-    code2_list = drilldown.distribution(scope, "장애코드2")
+    code2_list = drilldown.distribution(scope, "장애코드2") if selected_fault else pd.DataFrame()
     code2_options = code2_list["장애코드2"].tolist() if not code2_list.empty else []
-    selected_code2 = request.args.get("code2") or (code2_options[0] if code2_options else "")
-    if selected_code2 not in code2_options and code2_options:
-        selected_code2 = code2_options[0]
+    selected_code2 = request.args.get("code2", "")
+    if selected_code2 and selected_code2 not in code2_options:
+        selected_code2 = ""
     if selected_code2:
         scope = drilldown.filter_scope(scope, 장애코드2=selected_code2)
 
-    branch_list = drilldown.distribution(scope, "지점명", top_n=20)
     branch_options = branch_list["지점명"].tolist() if not branch_list.empty else []
     selected_branch = request.args.get("branch", "")
     if selected_branch and selected_branch not in branch_options:
@@ -922,8 +937,11 @@ def code_analysis():
     device_list = pd.DataFrame()
     branch_scope_count = 0
     selected_device = request.args.get("device", "")
-    if selected_branch:
-        branch_scope = drilldown.filter_scope(scope, 지점명=selected_branch)
+    if selected_branch and selected_fault:
+        branch_scope = drilldown.filter_scope(
+            drilldown.filter_scope(type_scope, 세부장애=selected_fault),
+            지점명=selected_branch,
+        )
         branch_scope_count = len(branch_scope)
         device_list = drilldown.distribution(branch_scope, "기번", top_n=20)
         device_options = device_list["기번"].tolist() if not device_list.empty else []
@@ -972,7 +990,7 @@ def code_analysis():
         fault_list=fault_list,
         fault_chart=figure_html(
             distribution_bar_figure(
-                _with_detail_labels(scope, fault_list),
+                _with_detail_labels(analysis_scope, fault_list),
                 "세부장애",
                 f"{selected_type} — 세부장애 분포 (건수)",
                 top_n=15,
@@ -982,6 +1000,7 @@ def code_analysis():
         if not fault_list.empty
         else "",
         selected_fault=selected_fault,
+        selected_fault_content=selected_fault_content,
         code2_list=code2_list,
         code2_chart=figure_html(
             distribution_bar_figure(code2_list, "장애코드2", f"{selected_fault} — 장애코드2 분포")
@@ -991,7 +1010,14 @@ def code_analysis():
         selected_code2=selected_code2,
         branch_list=branch_list,
         branch_chart=figure_html(
-            distribution_bar_figure(branch_list, "지점명", f"{selected_code2} — 지점별 TOP20", top_n=20)
+            distribution_bar_figure(
+                branch_list,
+                "지점명",
+                f"{selected_fault} · {selected_fault_content} — 지점 TOP20"
+                if selected_fault_content
+                else f"{selected_fault} — 지점 TOP20",
+                top_n=20,
+            )
         )
         if not branch_list.empty
         else "",

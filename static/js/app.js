@@ -1,4 +1,4 @@
-import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-20";
+import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-21";
 import {
   attachBranchName,
   computePriority,
@@ -14,8 +14,8 @@ import {
   monthlyTrend,
   primaryBranchForDevice,
   topNByMonth,
-} from "./analyzer.js?v=20260703-20";
-import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-20";
+} from "./analyzer.js?v=20260703-21";
+import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-21";
 import {
   applyMapping,
   clearExtraRows,
@@ -24,7 +24,7 @@ import {
   initStore,
   loadMapping,
   replaceMonthRows,
-} from "./store.js?v=20260703-20";
+} from "./store.js?v=20260703-21";
 
 const state = { page: "compare", params: new URLSearchParams() };
 
@@ -584,17 +584,25 @@ function renderCode() {
   }
 
   const faultList = enrichFaultDistribution(moduleScope, distribution(moduleScope, "세부장애", 30));
-  const activeDetail = detailCode || faultList[0]?.세부장애 || "";
-  const detailScope = activeDetail ? drilldown(moduleScope, { detailCode: activeDetail }) : moduleScope;
-  const code2List = distribution(detailScope, "장애코드2", 20).filter((d) => d.장애코드2);
-  const activeCode2 = code2 || code2List[0]?.장애코드2 || "";
-  const code2Scope = activeCode2 ? drilldown(detailScope, { code2: activeCode2 }) : detailScope;
-  const branchList = distribution(code2Scope, "지점명", 15);
+  const selectedFault = faultList.find((d) => String(d.세부장애) === String(detailCode));
+  const step4Scope = detailCode ? drilldown(typeScope, { detailCode }) : [];
+  const branchListStep4 = detailCode ? distribution(step4Scope, "지점명", 20) : [];
+  const detailScopeModule = detailCode ? drilldown(moduleScope, { detailCode }) : moduleScope;
+  const code2List = detailCode
+    ? distribution(detailScopeModule, "장애코드2", 20).filter((d) => d.장애코드2)
+    : [];
+  const activeCode2 = code2 || "";
+  const code2Scope = activeCode2 ? drilldown(detailScopeModule, { code2: activeCode2 }) : detailScopeModule;
   const activeBranch = branch;
-  const branchScope = activeBranch ? drilldown(code2Scope, { branch: activeBranch }) : code2Scope;
-  const deviceList = activeBranch ? distribution(branchScope, "기번", 20) : [];
+  const branchDrillScope =
+    detailCode && activeBranch ? drilldown(step4Scope, { branch: activeBranch }) : null;
+  const deviceList = branchDrillScope ? distribution(branchDrillScope, "기번", 20) : [];
   const activeDevice = device;
-  const deviceScope = activeDevice ? drilldown(branchScope, { device: activeDevice }) : branchScope;
+  const deviceScope =
+    activeDevice && branchDrillScope ? drilldown(branchDrillScope, { device: activeDevice }) : null;
+  const step4Title = selectedFault
+    ? `${detailCode} · ${selectedFault.장애내용 || ""} — 지점 TOP20`.replace(/ · —/, " —")
+    : `${detailCode} — 지점 TOP20`;
 
   queueMicrotask(() => {
     if (faultList.length) {
@@ -614,15 +622,17 @@ function renderCode() {
         document.getElementById("chart-code2"),
         code2List.map((d) => String(d.장애코드2)).slice().reverse(),
         code2List.map((d) => d.장애건수).slice().reverse(),
-        `${activeDetail} — 장애코드2 분포 (건수)`,
+        `${detailCode} — 장애코드2 분포 (건수)`,
       );
     }
-    if (branchList.length) {
+    if (branchListStep4.length) {
       renderBarChart(
         document.getElementById("chart-code-branch"),
-        branchList.map((d) => String(d.지점명)).slice().reverse(),
-        branchList.map((d) => d.장애건수).slice().reverse(),
-        `${activeCode2} — 지점별 분포 (건수)`,
+        branchListStep4.map((d) => String(d.지점명)).slice().reverse(),
+        branchListStep4.map((d) => d.장애건수).slice().reverse(),
+        step4Title,
+        "장애건수",
+        "지점명",
       );
     }
     if (deviceList.length) {
@@ -633,7 +643,7 @@ function renderCode() {
         `${activeBranch} — 기번별 분포`,
       );
     }
-    if (activeDevice && deviceScope.length) {
+    if (activeDevice && deviceScope?.length) {
       const dailyMap = new Map();
       for (const row of deviceScope) {
         const day = String(row.발생일자).slice(0, 10);
@@ -701,7 +711,7 @@ function renderCode() {
                 const chipLabel = d.장애내용
                   ? `${d.세부장애} · ${d.장애내용} (${d.장애건수})`
                   : `${d.세부장애} (${d.장애건수})`;
-                return `<a class="chip${d.세부장애 === (detailCode || activeDetail) ? " active" : ""}" href="${codeHref({ detail: d.세부장애, code2: "", branch: "", device: "" })}">${esc(chipLabel)}</a>`;
+                return `<a class="chip${d.세부장애 === detailCode ? " active" : ""}" href="${codeHref({ detail: d.세부장애, code2: "", branch: "", device: "" })}">${esc(chipLabel)}</a>`;
               })
               .join("")}
           </div>
@@ -715,6 +725,34 @@ function renderCode() {
     </section>
 
     ${
+      detailCode && branchListStep4.length
+        ? `<section class="card" id="step4">
+            <h3>Step 4 · ${esc(step4Title)}</h3>
+            <p class="caption">선택한 세부장애가 발생한 지점 TOP20 · 지점을 클릭하면 Step 5에서 기번별 분포를 확인합니다.</p>
+            <div class="grid-2">
+              <div id="chart-code-branch" class="chart-box"></div>
+              <div>
+                <div class="chip-row">
+                  ${branchListStep4
+                    .map(
+                      (d) =>
+                        `<a class="chip${d.지점명 === activeBranch ? " active" : ""}" href="${codeHref({ detail: detailCode, code2: "", branch: d.지점명, device: "" })}">${esc(d.지점명)} (${d.장애건수})</a>`,
+                    )
+                    .join("")}
+                </div>
+                ${tableHtml(branchListStep4, [
+                  { key: "지점명", label: "지점명" },
+                  { key: "장애건수", label: "장애건수" },
+                ])}
+              </div>
+            </div>
+          </section>`
+        : detailCode
+          ? `<section class="card" id="step4"><div class="alert info">선택한 세부장애에 대한 지점 데이터가 없습니다.</div></section>`
+          : ""
+    }
+
+    ${
       detailCode && code2List.length
         ? `<section class="card">
             <h3>Step 3 · 장애코드2</h3>
@@ -722,7 +760,7 @@ function renderCode() {
               ${code2List
                 .map(
                   (d) =>
-                    `<a class="chip${d.장애코드2 === activeCode2 ? " active" : ""}" href="${codeHref({ detail: activeDetail, code2: d.장애코드2, branch: "", device: "" })}">${esc(d.장애코드2)} (${d.장애건수})</a>`,
+                    `<a class="chip${d.장애코드2 === activeCode2 ? " active" : ""}" href="${codeHref({ detail: detailCode, code2: d.장애코드2, branch: "", device: "" })}">${esc(d.장애코드2)} (${d.장애건수})</a>`,
                 )
                 .join("")}
             </div>
@@ -735,31 +773,14 @@ function renderCode() {
     }
 
     ${
-      detailCode && branchList.length
-        ? `<section class="card">
-            <h3>Step 4 · 지점별 분포</h3>
-            <div class="chip-row">
-              ${branchList
-                .map(
-                  (d) =>
-                    `<a class="chip${d.지점명 === activeBranch ? " active" : ""}" href="${codeHref({ detail: activeDetail, code2: activeCode2, branch: d.지점명, device: "" })}">${esc(d.지점명)} (${d.장애건수})</a>`,
-                )
-                .join("")}
-            </div>
-            <div id="chart-code-branch" class="chart-box"></div>
-          </section>`
-        : ""
-    }
-
-    ${
-      activeBranch && deviceList.length
-        ? `<section class="card">
+      detailCode && activeBranch && deviceList.length
+        ? `<section class="card" id="step5">
             <h3>Step 5 · ${esc(activeBranch)} 기번별 분포</h3>
             <div class="chip-row">
               ${deviceList
                 .map(
                   (d) =>
-                    `<a class="chip${d.기번 === activeDevice ? " active" : ""}" href="${codeHref({ detail: activeDetail, code2: activeCode2, branch: activeBranch, device: d.기번 })}">${esc(d.기번)} (${d.장애건수})</a>`,
+                    `<a class="chip${d.기번 === activeDevice ? " active" : ""}" href="${codeHref({ detail: detailCode, code2: activeCode2, branch: activeBranch, device: d.기번 })}">${esc(deviceWithBranch({ 기번: d.기번, 지점명: activeBranch }))} (${d.장애건수})</a>`,
                 )
                 .join("")}
             </div>
@@ -772,9 +793,9 @@ function renderCode() {
     }
 
     ${
-      activeDevice
+      activeDevice && deviceScope?.length
         ? `<section class="card">
-            <h3>Step 6 · ${esc(activeDevice)} 일별 추이</h3>
+            <h3>Step 6 · ${esc(formatDeviceLabel(activeDevice, activeBranch))} 일별 추이</h3>
             <div id="chart-code-daily" class="chart-box"></div>
           </section>`
         : ""
@@ -786,8 +807,10 @@ function renderCode() {
         ? [activeDevice]
         : activeBranch
           ? [activeBranch]
-          : faultList.slice(0, 10).map((d) => String(d.세부장애)),
-      selectedValue: activeDevice || activeBranch || faultList[0]?.세부장애 || "",
+          : detailCode
+            ? [detailCode]
+            : faultList.slice(0, 10).map((d) => String(d.세부장애)),
+      selectedValue: activeDevice || activeBranch || detailCode || faultList[0]?.세부장애 || "",
       excludePage: "code",
     })}
   `;
@@ -994,6 +1017,9 @@ function render() {
   mountNavDock();
   bindForms();
   bindNavActions();
+  if (state.page === "code" && state.params.get("detail")) {
+    queueMicrotask(() => document.getElementById("step4")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }
   loadBuildLabel().then((build) => {
     const meta = getMeta();
     const buildLabel = build ? ` · build ${build}` : "";

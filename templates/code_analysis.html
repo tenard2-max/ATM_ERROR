@@ -74,7 +74,7 @@
         <div>
           <div class="chip-row">
             {% for _, row in fault_list.iterrows() %}
-              <a href="{{ build_url(fault=row['세부장애'], code2='', branch='', device='') }}" class="chip {% if row['세부장애'] == selected_fault %}active{% endif %}">
+              <a href="{{ build_url(fault=row['세부장애'], code2='', branch='', device='') }}#step4" class="chip {% if row['세부장애'] == selected_fault %}active{% endif %}">
                 {{ row['세부장애'] }}{% if row['장애내용'] %} · {{ row['장애내용'] }}{% endif %} ({{ "{:,}".format(row['장애건수']|int) }})
               </a>
             {% endfor %}
@@ -85,7 +85,29 @@
     </section>
   {% endif %}
 
-  {% if not code2_list.empty %}
+  {% if selected_fault and not branch_list.empty %}
+    <section class="card" id="step4">
+      <h3>Step 4 · {{ selected_fault }}{% if selected_fault_content %} · {{ selected_fault_content }}{% endif %} — 지점 TOP20</h3>
+      <p class="caption">선택한 세부장애가 발생한 지점 TOP20 · 지점을 클릭하면 Step 5에서 기번별 분포를 확인합니다.</p>
+      <div class="grid-2">
+        <div class="chart-box">{{ branch_chart|safe }}</div>
+        <div>
+          <div class="chip-row">
+            {% for _, row in branch_list.iterrows() %}
+              <a href="{{ build_url(branch=row['지점명'], device='') }}#step5" class="chip {% if row['지점명'] == selected_branch %}active{% endif %}">{{ row['지점명'] }} ({{ "{:,}".format(row['장애건수']|int) }})</a>
+            {% endfor %}
+          </div>
+          {{ branch_list.to_html(index=False, classes='data-table', border=0)|safe }}
+        </div>
+      </div>
+    </section>
+  {% elif selected_fault %}
+    <section class="card" id="step4">
+      <div class="alert info">선택한 세부장애에 대한 지점 데이터가 없습니다.</div>
+    </section>
+  {% endif %}
+
+  {% if selected_fault and not code2_list.empty %}
     <section class="card">
       <h3>Step 3. 장애코드2</h3>
       <div class="chip-row">
@@ -97,19 +119,6 @@
         <div class="chart-box">{{ code2_chart|safe }}</div>
         <div>{{ code2_list.to_html(index=False, classes='data-table', border=0)|safe }}</div>
       </div>
-    </section>
-  {% endif %}
-
-  {% if not branch_list.empty %}
-    <section class="card">
-      <h3>Step 4. 지점별 분포</h3>
-      <div class="chip-row">
-        {% for b in branch_list['지점명'] %}
-          <a href="{{ build_url(branch=b, device='') }}#step5" class="chip {% if b == selected_branch %}active{% endif %}">{{ b }}</a>
-        {% endfor %}
-      </div>
-      <div class="chart-box">{{ branch_chart|safe }}</div>
-      <p class="caption">지점명을 클릭하면 Step 5에서 해당 지점의 기번별 분포를 확인합니다.</p>
     </section>
   {% endif %}
 
