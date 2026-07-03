@@ -864,7 +864,7 @@ def code_analysis():
         selected_type = ai_types[0]
     scope = drilldown.filter_scope(scope, ai_type=selected_type)
 
-    fault_list = drilldown.distribution(scope, "세부장애")
+    fault_list = analyzer.enrich_fault_distribution(scope, drilldown.distribution(scope, "세부장애"))
     fault_options = fault_list["세부장애"].tolist() if not fault_list.empty else []
     selected_fault = request.args.get("fault") or (
         link_fault if link_fault in fault_options else (fault_options[0] if fault_options else "")

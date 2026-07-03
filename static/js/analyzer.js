@@ -1,4 +1,4 @@
-import { TOP_N, PRIORITY_TOP_N } from "./config.js?v=20260703-18";
+import { TOP_N, PRIORITY_TOP_N } from "./config.js?v=20260703-19";
 
 export function getMonths(rows) {
   return [...new Set(rows.map((r) => r.연월))].sort();
@@ -114,6 +114,13 @@ export function formatDetailLabel(rows, detailCode, detailCol = "세부장애", 
   if (!content) return code;
   const short = content.length > 22 ? `${content.slice(0, 20)}…` : content;
   return `${code} · ${short}`;
+}
+
+export function enrichFaultDistribution(rows, faultList, detailCol = "세부장애", contentCol = "장애내용") {
+  return faultList.map((item) => ({
+    ...item,
+    장애내용: primaryFaultContent(rows, item[detailCol], detailCol, contentCol),
+  }));
 }
 
 export function dailyTrend(rows, month, entityCol, entities) {

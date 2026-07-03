@@ -52,8 +52,10 @@
         <div class="chart-box">{{ fault_chart|safe }}</div>
         <div>
           <div class="chip-row">
-            {% for f in fault_list['세부장애'] %}
-              <a href="{{ build_url(fault=f, code2='', branch='', device='') }}" class="chip {% if f == selected_fault %}active{% endif %}">{{ f }}</a>
+            {% for _, row in fault_list.iterrows() %}
+              <a href="{{ build_url(fault=row['세부장애'], code2='', branch='', device='') }}" class="chip {% if row['세부장애'] == selected_fault %}active{% endif %}">
+                {{ row['세부장애'] }}{% if row['장애내용'] %} · {{ row['장애내용'] }}{% endif %} ({{ "{:,}".format(row['장애건수']|int) }})
+              </a>
             {% endfor %}
           </div>
           {{ fault_list.to_html(index=False, classes='data-table', border=0)|safe }}

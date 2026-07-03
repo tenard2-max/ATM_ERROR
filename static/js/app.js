@@ -1,4 +1,4 @@
-import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-18";
+import { FLOW_MODES, NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js?v=20260703-19";
 import {
   attachBranchName,
   computePriority,
@@ -7,14 +7,15 @@ import {
   drilldown,
   entityOptions,
   formatDeviceLabel,
+  enrichFaultDistribution,
   formatDetailLabel,
   getMonths,
   monthlyCounts,
   monthlyTrend,
   primaryBranchForDevice,
   topNByMonth,
-} from "./analyzer.js?v=20260703-18";
-import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-18";
+} from "./analyzer.js?v=20260703-19";
+import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js?v=20260703-19";
 import {
   applyMapping,
   clearExtraRows,
@@ -23,7 +24,7 @@ import {
   initStore,
   loadMapping,
   replaceMonthRows,
-} from "./store.js?v=20260703-18";
+} from "./store.js?v=20260703-19";
 
 const state = { page: "compare", params: new URLSearchParams() };
 
@@ -548,7 +549,7 @@ function renderCode() {
       <div class="alert warn">${esc(month)} · ${esc(faultType)} 데이터가 없습니다.</div>`;
   }
 
-  const faultList = distribution(moduleScope, "세부장애", 30);
+  const faultList = enrichFaultDistribution(moduleScope, distribution(moduleScope, "세부장애", 30));
   const activeDetail = detailCode || faultList[0]?.세부장애 || "";
   const detailScope = activeDetail ? drilldown(moduleScope, { detailCode: activeDetail }) : moduleScope;
   const code2List = distribution(detailScope, "장애코드2", 20).filter((d) => d.장애코드2);
@@ -641,13 +642,19 @@ function renderCode() {
         <div>
           <div class="chip-row">
             ${faultList
-              .map(
-                (d) =>
-                  `<a class="chip${d.세부장애 === (detailCode || activeDetail) ? " active" : ""}" href="${codeHref({ detail: d.세부장애, code2: "", branch: "", device: "" })}">${esc(d.세부장애)} (${d.장애건수})</a>`,
-              )
+              .map((d) => {
+                const chipLabel = d.장애내용
+                  ? `${d.세부장애} · ${d.장애내용} (${d.장애건수})`
+                  : `${d.세부장애} (${d.장애건수})`;
+                return `<a class="chip${d.세부장애 === (detailCode || activeDetail) ? " active" : ""}" href="${codeHref({ detail: d.세부장애, code2: "", branch: "", device: "" })}">${esc(chipLabel)}</a>`;
+              })
               .join("")}
           </div>
-          ${tableHtml(faultList, [{ key: "세부장애", label: "세부장애" }, { key: "장애건수", label: "장애건수" }])}
+          ${tableHtml(faultList, [
+            { key: "세부장애", label: "세부장애" },
+            { key: "장애내용", label: "장애내용" },
+            { key: "장애건수", label: "장애건수" },
+          ])}
         </div>
       </div>
     </section>

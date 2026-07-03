@@ -140,6 +140,21 @@ def detail_chart_labels(
     return counts[detail_col].map(lambda code: format_detail_label(df, code, detail_col))
 
 
+def enrich_fault_distribution(
+    df: pd.DataFrame,
+    counts: pd.DataFrame,
+    detail_col: str = "세부장애",
+    content_col: str = "장애내용",
+) -> pd.DataFrame:
+    out = counts.copy()
+    if out.empty or detail_col not in out.columns:
+        return out
+    out[content_col] = out[detail_col].map(
+        lambda code: primary_fault_content(df, code, detail_col, content_col)
+    )
+    return out[[detail_col, content_col, "장애건수"]]
+
+
 def daily_trend_by_entities(
     df: pd.DataFrame,
     selected_month: str,
