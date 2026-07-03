@@ -1,0 +1,474 @@
+import { NAV_ITEMS, TOP_N, FAULT_TYPES } from "./config.js";
+import {
+  attachBranchName,
+  computePriority,
+  dailyTrend,
+  distribution,
+  drilldown,
+  entityOptions,
+  getMonths,
+  monthlyCounts,
+  monthlyTrend,
+  topNByMonth,
+} from "./analyzer.js";
+import { renderBarChart, renderLineChart, renderTrendChart } from "./charts.js";
+import {
+  applyMapping,
+  clearExtraRows,
+  getMeta,
+  getRows,
+  initStore,
+  loadMapping,
+  replaceMonthRows,
+} from "./store.js";
+
+const state = { page: "home", params: new URLSearchParams() };
+
+function esc(text) {
+  return String(text ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;");
+}
+
+function setRoute(page, params = {}) {
+  const qs = new URLSearchParams(params).toString();
+  location.hash = qs ? `#/${page}?${qs}` : `#/${page}`;
+}
+
+function parseRoute() {
+  const raw = location.hash.replace(/^#\/?/, "") || "home";
+  const [page, query = ""] = raw.split("?");
+  state.page = page || "home";
+  state.params = new URLSearchParams(query);
+}
+
+function tableHtml(rows, columns) {
+  if (!rows.length) return '<p class="muted">표시할 데이터가 없습니다.</p>';
+  const head = columns.map((c) => `<th>${esc(c.label || c)}</th>`).join("");
+  const body = rows
+    .map((row) => {
+      const cells = columns
+        .map((c) => {
+          const key = c.key || c;
+          const val = row[key];
+          return `<td>${esc(typeof val === "number" ? val.toLocaleString() : val)}</td>`;
+        })
+        .join("");
+      return `<tr>${cells}</tr>`;
+    })
+    .join("");
+  return `<table class="data-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+}
+
+function renderNav() {
+  const nav = document.getElementById("main-nav");
+  nav.innerHTML = NAV_ITEMS.filter((n) => n.id !== "home")
+    .map(
+      (item) =>
+        `<a href="#/${item.id}" class="nav-tile nav-${item.tone}${state.page === item.id ? " active" : ""}">${esc(item.label)}</a>`,
+    )
+    .join("");
+}
+
+function renderHome() {
+  const meta = getMeta();
+  return `
+    <section class="portal-card">
+      <h2>📊 전체기기 월별비교 PoC</h2>
+      <p class="caption">GitHub Pages · 브라우저에서 바로 분석 (샘플 ${meta.rowCount.toLocaleString()}건)</p>
+      ${
+        meta.monthCount
+          ? `<p class="caption">적재 <strong>${meta.monthCount}개월</strong> (${esc(meta.months.join(", "))})</p>
+             <p class="caption"><a href="#/compare">전체비교</a>에서 분석을 시작하세요.</p>`
+          : `<p class="caption">데이터가 없습니다. <a href="#/data">데이터관리</a>에서 Excel을 업로드하세요.</p>`
+      }
+    </section>`;
+}
+
+function renderCompare() {
+  const rows = getRows();
+  const months = getMonths(rows);
+  if (!months.length) return `<div class="alert warn">데이터가 없습니다. <a href="#/data">데이터관리</a>에서 업로드하세요.</div>`;
+
+  const month = state.params.get("month") || months[months.length - 1];
+  const tab = state.params.get("tab") || "지점";
+  const dailyEntity = state.params.get("daily_entity") || "";
+  const tabs = {
+    지점: { col: "지점명", navType: "지점" },
+    기번: { col: "기번", navType: "기번" },
+    기종: { col: "기종", navType: "기종", all: true },
+  };
+  const cfg = tabs[tab] || tabs.지점;
+  const counts = monthlyCounts(rows, cfg.col);
+  let monthData = counts.filter((r) => r.연월 === month);
+  if (!cfg.all) monthData = monthData.slice(0, TOP_N);
+  if (tab === "기번") monthData = attachBranchName(rows, monthData, month);
+
+  const labels = monthData.map((r) =>
+    tab === "기번" && r.지점이름 ? `${r.기번} (${r.지점이름})` : r[cfg.col],
+  );
+  const values = monthData.map((r) => r.장애건수);
+
+  const tabLinks = Object.keys(tabs)
+    .map(
+      (key) =>
+        `<a href="#/compare?month=${encodeURIComponent(month)}&tab=${encodeURIComponent(key)}" class="tab${tab === key ? " active" : ""}">${esc(key)}${key !== "기종" ? ` TOP${TOP_N}` : ""}</a>`,
+    )
+    .join("");
+
+  const monthOpts = months
+    .map((m) => `<option value="${esc(m)}"${m === month ? " selected" : ""}>${esc(m)}</option>`)
+    .join("");
+
+  let dailySection = "";
+  if (tab === "지점" && monthData.length) {
+    const entities = dailyEntity
+      ? [dailyEntity]
+      : monthData.slice(0, TOP_N).map((r) => r.지점명);
+    const dailyOpts = monthData
+      .map(
+        (r) =>
+          `<option value="${esc(r.지점명)}"${r.지점명 === dailyEntity ? " selected" : ""}>${esc(r.지점명)}</option>`,
+      )
+      .join("");
+    dailySection = `
+      <h3>${esc(month)} 일별 장애 추이</h3>
+      <form class="inline-form card" onsubmit="return false">
+        <label>지점 선택
+          <select id="daily-select">
+            <option value="">(TOP${TOP_N} 전체)</option>${dailyOpts}
+          </select>
+        </label>
+      </form>
+      <div id="chart-daily" class="chart-box"></div>`;
+    queueMicrotask(() => {
+      const { rows: dailyRows } = dailyTrend(rows, month, "지점명", entities);
+      const days = [...new Set(dailyRows.map((r) => r.일))].sort((a, b) => a - b);
+      const series = entities.map((ent) => ({
+        name: ent,
+        y: days.map((d) => dailyRows.find((r) => r.일 === d && r.지점명 === ent)?.장애건수 || 0),
+      }));
+      renderLineChart(document.getElementById("chart-daily"), days, series, `${month} 일별 추이`);
+      document.getElementById("daily-select")?.addEventListener("change", (e) => {
+        const val = e.target.value;
+        const p = { month, tab };
+        if (val) p.daily_entity = val;
+        setRoute("compare", p);
+      });
+    });
+  }
+
+  queueMicrotask(() => {
+    renderBarChart(
+      document.getElementById("chart-compare"),
+      labels.slice().reverse(),
+      values.slice().reverse(),
+      `${month} — ${tab}별 ${cfg.all ? "전체" : `TOP${TOP_N}`}`,
+    );
+  });
+
+  return `
+    <h2>📊 전체기기 월별비교</h2>
+    <p class="caption">지점별 / 기번별 / 기종별 월간 장애건수 TOP10</p>
+    <form class="inline-form" onsubmit="return false">
+      <label>조회 연월
+        <select id="month-select">${monthOpts}</select>
+      </label>
+    </form>
+    <div class="tabs">${tabLinks}</div>
+    <div class="metrics">
+      <div class="metric"><span>표시</span><strong>${monthData.length}개</strong></div>
+      <div class="metric"><span>합계</span><strong>${values.reduce((a, b) => a + b, 0).toLocaleString()}건</strong></div>
+    </div>
+    <div id="chart-compare" class="chart-box"></div>
+    <h3>TOP 목록</h3>
+    ${tableHtml(monthData, [
+      { key: cfg.col, label: tab },
+      ...(tab === "기번" ? [{ key: "지점이름", label: "지점" }] : []),
+      { key: "장애건수", label: "장애건수" },
+    ])}
+    ${dailySection}
+  `;
+}
+
+function renderFlow() {
+  const rows = getRows();
+  const months = getMonths(rows);
+  if (!months.length) return `<div class="alert warn">데이터가 없습니다.</div>`;
+
+  const mode = state.params.get("mode") || "기번";
+  const col = mode === "기종 (모델 전체)" ? "기종" : mode === "지점" ? "지점명" : "기번";
+  const options = entityOptions(rows, col);
+  const value = state.params.get("value") || options[0]?.value || "";
+  const flowMonth = state.params.get("flow_month") || months[months.length - 1];
+  const trend = monthlyTrend(rows, col, value);
+
+  queueMicrotask(() => {
+    renderTrendChart(
+      document.getElementById("chart-flow"),
+      trend.map((r) => r.연월),
+      trend.map((r) => r.장애건수),
+      `${value} — 월별 추이`,
+    );
+  });
+
+  const modeRadios = ["기번 (개별 ATM)", "기종 (모델 전체)", "지점"]
+    .map(
+      (m) =>
+        `<label><input type="radio" name="mode" value="${esc(m)}"${mode === m ? " checked" : ""}> ${esc(m)}</label>`,
+    )
+    .join(" ");
+  const valueOpts = options
+    .map((o) => `<option value="${esc(o.value)}"${o.value === value ? " selected" : ""}>${esc(o.label)}</option>`)
+    .join("");
+  const monthOpts = months
+    .map((m) => `<option value="${esc(m)}"${m === flowMonth ? " selected" : ""}>${esc(m)}</option>`)
+    .join("");
+
+  return `
+    <h2>📈 장애다발기기분석</h2>
+    <form id="flow-form" class="inline-form card">
+      <fieldset><legend>분석 단위</legend>${modeRadios}</fieldset>
+      <label>${esc(col)} 선택 <select name="value">${valueOpts}</select></label>
+      <label>조회 연월 <select name="flow_month">${monthOpts}</select></label>
+    </form>
+    <div id="chart-flow" class="chart-box"></div>
+    ${trend.length < 2 ? '<div class="alert info">추세 분석을 위해 더 많은 월별 데이터가 필요합니다.</div>' : ""}
+  `;
+}
+
+function renderCode() {
+  const rows = getRows();
+  const months = getMonths(rows);
+  if (!months.length) return `<div class="alert warn">데이터가 없습니다.</div>`;
+
+  const month = state.params.get("month") || months[months.length - 1];
+  const faultType = state.params.get("fault_type") || FAULT_TYPES[0];
+  const detailCode = state.params.get("detail") || "";
+  const code2 = state.params.get("code2") || "";
+  const branch = state.params.get("branch") || "";
+
+  const filtered = drilldown(rows, { month, faultType, detailCode, code2, branch });
+  const details = distribution(
+    drilldown(rows, { month, faultType }),
+    "세부장애",
+    30,
+  );
+  const code2Rows = detailCode
+    ? distribution(drilldown(rows, { month, faultType, detailCode }), "장애코드2", 20)
+    : [];
+  const branchRows = code2
+    ? distribution(drilldown(rows, { month, faultType, detailCode, code2 }), "지점명", 15)
+    : [];
+
+  const monthOpts = months.map((m) => `<option value="${esc(m)}"${m === month ? " selected" : ""}>${esc(m)}</option>`).join("");
+  const typeOpts = FAULT_TYPES.map((t) => `<option value="${esc(t)}"${t === faultType ? " selected" : ""}>${esc(t)}</option>`).join("");
+
+  queueMicrotask(() => {
+    if (filtered.length && branch) {
+      const { rows: dailyRows } = dailyTrend(filtered, month, "기번", [...new Set(filtered.map((r) => r.기번))].slice(0, 5));
+      const days = [...new Set(dailyRows.map((r) => r.일))].sort((a, b) => a - b);
+      const devices = [...new Set(dailyRows.map((r) => r.기번))];
+      renderLineChart(
+        document.getElementById("chart-code"),
+        days,
+        devices.map((d) => ({
+          name: d,
+          y: days.map((day) => dailyRows.find((r) => r.일 === day && r.기번 === d)?.장애건수 || 0),
+        })),
+        "일별 추이",
+      );
+    }
+  });
+
+  return `
+    <h2>🧩 모듈별장애분석</h2>
+    <form id="code-form" class="inline-form card">
+      <label>연월 <select name="month">${monthOpts}</select></label>
+      <label>모듈 <select name="fault_type">${typeOpts}</select></label>
+      ${detailCode ? `<input type="hidden" name="detail" value="${esc(detailCode)}">` : ""}
+      ${code2 ? `<input type="hidden" name="code2" value="${esc(code2)}">` : ""}
+      ${branch ? `<input type="hidden" name="branch" value="${esc(branch)}">` : ""}
+    </form>
+    <h3>Step 1 · 세부장애</h3>
+    <div id="detail-links">
+      ${details
+        .map(
+          (d) =>
+            `<a class="chip${d.세부장애 === detailCode ? " active" : ""}" href="#/code?month=${encodeURIComponent(month)}&fault_type=${encodeURIComponent(faultType)}&detail=${encodeURIComponent(d.세부장애)}">${esc(d.세부장애)} (${d.장애건수})</a>`,
+        )
+        .join(" ")}
+    </div>
+    ${
+      detailCode
+        ? `<h3>Step 2 · 장애코드2</h3>
+           ${code2Rows
+             .map(
+               (d) =>
+                 `<a class="chip${d.장애코드2 === code2 ? " active" : ""}" href="#/code?month=${encodeURIComponent(month)}&fault_type=${encodeURIComponent(faultType)}&detail=${encodeURIComponent(detailCode)}&code2=${encodeURIComponent(d.장애코드2)}">${esc(d.장애코드2)} (${d.장애건수})</a>`,
+             )
+             .join(" ")}`
+        : ""
+    }
+    ${
+      code2
+        ? `<h3>Step 3 · 지점</h3>
+           ${branchRows
+             .map(
+               (d) =>
+                 `<a class="chip${d.지점명 === branch ? " active" : ""}" href="#/code?month=${encodeURIComponent(month)}&fault_type=${encodeURIComponent(faultType)}&detail=${encodeURIComponent(detailCode)}&code2=${encodeURIComponent(code2)}&branch=${encodeURIComponent(d.지점명)}">${esc(d.지점명)} (${d.장애건수})</a>`,
+             )
+             .join(" ")}`
+        : ""
+    }
+    ${branch ? `<h3>Step 4 · 일별 추이</h3><div id="chart-code" class="chart-box"></div>` : ""}
+  `;
+}
+
+function renderPriority() {
+  const rows = getRows();
+  const ranked = computePriority(rows);
+  if (!ranked.length) return `<div class="alert warn">데이터가 없습니다.</div>`;
+
+  queueMicrotask(() => {
+    renderBarChart(
+      document.getElementById("chart-priority"),
+      ranked.map((r) => r.기번).reverse(),
+      ranked.map((r) => Math.round(r.위험도점수)).reverse(),
+      `위험도 TOP${ranked.length} (기번)`,
+      "위험도",
+    );
+  });
+
+  return `
+    <h2>🎯 중점장애관리</h2>
+    <div id="chart-priority" class="chart-box"></div>
+    ${tableHtml(ranked, [
+      { key: "기번", label: "기번" },
+      { key: "지점명", label: "지점" },
+      { key: "기종", label: "기종" },
+      { key: "최근3개월건수", label: "최근3개월" },
+      { key: "전월대비증가율", label: "증가율(%)" },
+      { key: "위험도점수", label: "위험도" },
+    ])}
+  `;
+}
+
+function renderData() {
+  const meta = getMeta();
+  return `
+    <h2>📁 데이터관리</h2>
+    <p class="caption">브라우저에 Excel(.xlsx) 업로드 · 샘플 ${meta.rowCount.toLocaleString()}건 내장</p>
+    <div class="metrics">
+      <div class="metric"><span>월 수</span><strong>${meta.monthCount}</strong></div>
+      <div class="metric"><span>총 건수</span><strong>${meta.rowCount.toLocaleString()}</strong></div>
+    </div>
+    <p class="caption">월: ${esc(meta.months.join(", ") || "-")}</p>
+    <form id="upload-form" class="card">
+      <label>장애리스트 Excel 업로드 (.xlsx)
+        <input type="file" id="upload-file" accept=".xlsx,.xls">
+      </label>
+      <button type="submit">업로드·적재</button>
+    </form>
+    <button id="clear-extra" class="secondary" type="button">브라우저 추가 데이터 초기화</button>
+    <p id="upload-msg" class="caption"></p>
+  `;
+}
+
+function bindForms() {
+  document.getElementById("month-select")?.addEventListener("change", (e) => {
+    setRoute("compare", { month: e.target.value, tab: state.params.get("tab") || "지점" });
+  });
+  const flowForm = document.getElementById("flow-form");
+  flowForm?.addEventListener("change", () => {
+    const fd = new FormData(flowForm);
+    setRoute("flow", Object.fromEntries(fd.entries()));
+  });
+  const codeForm = document.getElementById("code-form");
+  codeForm?.addEventListener("change", () => {
+    const fd = new FormData(codeForm);
+    setRoute("code", Object.fromEntries(fd.entries()));
+  });
+  document.getElementById("upload-form")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const msg = document.getElementById("upload-msg");
+    const file = document.getElementById("upload-file").files[0];
+    if (!file) {
+      msg.textContent = "파일을 선택하세요.";
+      return;
+    }
+    try {
+      const mapping = await loadMapping();
+      const buffer = await file.arrayBuffer();
+      const wb = XLSX.read(buffer, { type: "array" });
+      const sheet = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+      const required = ["점번", "지점명", "기번", "기종", "발생일자", "세부장애", "장애내용"];
+      for (const col of required) {
+        if (!(col in (raw[0] || {}))) throw new Error(`필수 컬럼 누락: ${col}`);
+      }
+      let rows = raw.map((r) => {
+        const d = new Date(r.발생일자);
+        const 연월 = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+        return {
+          연월,
+          점번: String(r.점번),
+          지점명: String(r.지점명),
+          기번: String(r.기번),
+          기종: String(r.기종),
+          발생일자: String(r.발생일자).slice(0, 10),
+          세부장애: String(r.세부장애),
+          장애내용: String(r.장애내용),
+          장애코드2: String(r.장애코드2 || ""),
+        };
+      });
+      rows = applyMapping(rows, mapping);
+      const month = rows[0]?.연월;
+      replaceMonthRows(month, rows);
+      msg.textContent = `${file.name} — ${month} ${rows.length.toLocaleString()}건 저장 (브라우저)`;
+      render();
+    } catch (err) {
+      msg.textContent = err.message || String(err);
+    }
+  });
+  document.getElementById("clear-extra")?.addEventListener("click", () => {
+    clearExtraRows();
+    document.getElementById("upload-msg").textContent = "브라우저 추가 데이터를 초기화했습니다.";
+    render();
+  });
+}
+
+function render() {
+  parseRoute();
+  renderNav();
+  const app = document.getElementById("app");
+  const views = {
+    home: renderHome,
+    compare: renderCompare,
+    flow: renderFlow,
+    code: renderCode,
+    priority: renderPriority,
+    data: renderData,
+  };
+  const fn = views[state.page] || views.home;
+  app.innerHTML = fn();
+  bindForms();
+  document.getElementById("subtitle").textContent =
+    `GitHub Pages · ${getMeta().rowCount.toLocaleString()}건 · ${location.hostname}`;
+}
+
+async function boot() {
+  const app = document.getElementById("app");
+  app.innerHTML = '<p class="caption">데이터 로딩 중…</p>';
+  try {
+    await initStore();
+    render();
+    window.addEventListener("hashchange", render);
+  } catch (err) {
+    app.innerHTML = `<div class="alert error">로드 실패: ${esc(err.message)}</div>`;
+  }
+}
+
+boot();

@@ -5,107 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>장애 다발 기기 분석</title>
   <link rel="stylesheet" href="static/style.css">
-  <script src="site-config.js"></script>
-  <style>
-    .portal-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 12px;
-      padding: 20px 24px;
-      margin-top: 20px;
-    }
-    .notice {
-      background: #fff8e6;
-      border: 1px solid #f0d78c;
-      border-radius: 8px;
-      padding: 14px 16px;
-      margin: 16px 0;
-      line-height: 1.6;
-    }
-    .btn-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
-    .btn {
-      display: inline-block;
-      padding: 10px 16px;
-      border-radius: 8px;
-      text-decoration: none;
-      font-weight: 600;
-      background: #2563eb;
-      color: #fff;
-    }
-    .btn.secondary { background: #475569; }
-    .btn.outline { background: #fff; color: #2563eb; border: 1px solid #2563eb; }
-    code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; }
-  </style>
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js" charset="utf-8"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 </head>
 <body>
   <header class="site-header">
     <div class="wrap">
       <h1>🏧 장애 다발 기기 분석</h1>
-      <p class="subtitle" id="subtitle">GitHub 저장소 · 정적 미리보기</p>
+      <p class="subtitle" id="subtitle">GitHub Pages · 로딩 중…</p>
     </div>
   </header>
 
-  <main class="wrap">
-    <section class="portal-card">
-      <h2>📊 전체기기 월별비교 PoC</h2>
+  <nav class="main-nav">
+    <div class="wrap nav-grid" id="main-nav"></div>
+  </nav>
 
-      <div class="notice" id="github-notice">
-        <strong>GitHub Pages에서는 분석 기능이 동작하지 않습니다.</strong><br>
-        차트·업로드·DB 기능은 Python Flask 서버가 필요합니다.
-        아래 방법 중 하나로 실행해 주세요.
-      </div>
-
-      <div class="btn-row">
-        <a class="btn" id="btn-live" href="#" style="display:none">▶ 배포된 앱 열기</a>
-        <a class="btn secondary" id="btn-render" href="https://render.com/docs/blueprint-spec" target="_blank" rel="noopener">Render 배포 가이드</a>
-        <a class="btn outline" href="DEPLOY.md">DEPLOY.md 보기</a>
-      </div>
-
-      <h3 style="margin-top:24px">로컬에서 실행</h3>
-      <p class="caption">저장소를 clone한 뒤 프로젝트 폴더에서:</p>
-      <pre style="background:#f8fafc;padding:12px;border-radius:8px;overflow:auto"><code>pip install -r requirements.txt
-python web_app.py</code></pre>
-      <p class="caption">브라우저에서 <code>http://localhost:8502</code> 접속 (자동으로 열립니다)</p>
-
-      <h3 style="margin-top:24px">배포 URL 연결 (선택)</h3>
-      <p class="caption">
-        Render 등에 배포했다면 <code>site-config.js</code>의 <code>liveAppUrl</code>에 URL을 입력하면
-        GitHub Pages 접속 시 자동으로 이동합니다.
-      </p>
-    </section>
+  <main class="wrap" id="app">
+    <p class="caption">데이터 로딩 중…</p>
   </main>
 
-  <script>
-    (function () {
-      var cfg = window.SITE_CONFIG || {};
-      var host = location.hostname;
-      var onGithubPages = host.endsWith(".github.io") || host === "github.io";
-
-      if (cfg.liveAppUrl) {
-        if (onGithubPages || location.protocol === "file:") {
-          location.replace(cfg.liveAppUrl.replace(/\/$/, "") + "/");
-          return;
-        }
-        var liveBtn = document.getElementById("btn-live");
-        liveBtn.href = cfg.liveAppUrl;
-        liveBtn.style.display = "inline-block";
-      }
-
-      if (cfg.githubRepo) {
-        document.getElementById("btn-render").href =
-          "https://render.com/deploy?repo=" + encodeURIComponent(cfg.githubRepo);
-        document.querySelector('a[href="DEPLOY.md"]').href =
-          cfg.githubRepo.replace(/\/$/, "") + "/blob/main/DEPLOY.md";
-      }
-
-      if (!onGithubPages && (host === "localhost" || host === "127.0.0.1")) {
-        document.getElementById("subtitle").textContent = "로컬 미리보기 · Flask 서버를 실행하세요";
-        document.getElementById("github-notice").innerHTML =
-          "<strong>정적 HTML만 열려 있습니다.</strong><br>" +
-          "메뉴·차트·업로드는 <code>python web_app.py</code> 실행 후 " +
-          "<a href=\"http://localhost:8502\">http://localhost:8502</a> 에서 이용하세요.";
-      }
-    })();
-  </script>
+  <script type="module" src="static/js/app.js"></script>
 </body>
 </html>

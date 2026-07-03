@@ -22,6 +22,9 @@ jobs:
       - name: Generate sample data
         run: python scripts/create_sample_data.py
 
+      - name: Export GitHub Pages JSON
+        run: python scripts/export_static_data.py
+
       - name: Run integration checks
         run: python scripts/verify_phase8.py
 

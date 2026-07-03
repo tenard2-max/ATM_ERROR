@@ -4,7 +4,7 @@ venv/
 __pycache__/
 *.pyc
 .pytest_cache/
-data/
+/data/
 .streamlit/secrets.toml
 
 # 실운영 장애 Excel (GitHub 공개 금지)
