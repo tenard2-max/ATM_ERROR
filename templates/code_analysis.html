@@ -1,0 +1,125 @@
+{% extends "base.html" %}
+{% block title %}모듈별장애분석 — 장애 다발 기기 분석{% endblock %}
+{% block content %}
+<h2>🔍 모듈별장애분석</h2>
+
+{% if empty %}
+  <div class="alert warn">데이터가 없습니다. <a href="{{ url_for('data_manage') }}">0 데이터관리</a>에서 업로드하세요.</div>
+{% elif need_grouping %}
+  <div class="alert error">AI 유형 그룹핑이 확정되지 않았습니다. <a href="{{ url_for('data_manage') }}">0 데이터관리</a>에서 먼저 완료하세요.</div>
+  <form method="post">
+    <input type="hidden" name="action" value="allow_unconfirmed">
+    <button type="submit" class="secondary">확정 없이 미분류로 진행</button>
+  </form>
+{% elif no_data %}
+  <form method="get" class="inline-form">
+    <label>분석 연월
+      <select name="month" onchange="this.form.submit()">
+        {% for m in months %}
+          <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+  <div class="alert warn">선택 연월에 분석할 데이터가 없습니다.</div>
+{% else %}
+  <form method="get" class="inline-form card">
+    <label>분석 연월
+      <select name="month" onchange="this.form.submit()">
+        {% for m in months %}
+          <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m }}</option>
+        {% endfor %}
+      </select>
+    </label>
+  </form>
+
+  <section class="card">
+    <h3>모듈선택</h3>
+    <div class="chip-row">
+      {% for t in ai_types %}
+        <a href="{{ build_url(ai_type=t, fault='', code2='', branch='', device='') }}" class="chip {% if t == selected_type %}active{% endif %}">{{ t }}</a>
+      {% endfor %}
+    </div>
+  </section>
+
+  {% if fault_list.empty %}
+    <div class="alert info">세부장애 데이터가 없습니다.</div>
+  {% else %}
+    <section class="card">
+      <h3>Step 2. 세부장애</h3>
+      <div class="grid-2">
+        <div class="chart-box">{{ fault_chart|safe }}</div>
+        <div>
+          <div class="chip-row">
+            {% for f in fault_list['세부장애'] %}
+              <a href="{{ build_url(fault=f, code2='', branch='', device='') }}" class="chip {% if f == selected_fault %}active{% endif %}">{{ f }}</a>
+            {% endfor %}
+          </div>
+          {{ fault_list.to_html(index=False, classes='data-table', border=0)|safe }}
+        </div>
+      </div>
+    </section>
+  {% endif %}
+
+  {% if not code2_list.empty %}
+    <section class="card">
+      <h3>Step 3. 장애코드2</h3>
+      <div class="chip-row">
+        {% for c in code2_list['장애코드2'] %}
+          <a href="{{ build_url(code2=c, branch='', device='') }}" class="chip {% if c == selected_code2 %}active{% endif %}">{{ c }}</a>
+        {% endfor %}
+      </div>
+      <div class="grid-2">
+        <div class="chart-box">{{ code2_chart|safe }}</div>
+        <div>{{ code2_list.to_html(index=False, classes='data-table', border=0)|safe }}</div>
+      </div>
+    </section>
+  {% endif %}
+
+  {% if not branch_list.empty %}
+    <section class="card">
+      <h3>Step 4. 지점별 분포</h3>
+      <div class="chip-row">
+        {% for b in branch_list['지점명'] %}
+          <a href="{{ build_url(branch=b, device='') }}#step5" class="chip {% if b == selected_branch %}active{% endif %}">{{ b }}</a>
+        {% endfor %}
+      </div>
+      <div class="chart-box">{{ branch_chart|safe }}</div>
+      <p class="caption">지점명을 클릭하면 Step 5에서 해당 지점의 기번별 분포를 확인합니다.</p>
+    </section>
+  {% endif %}
+
+  {% if selected_branch %}
+    <section class="card" id="step5">
+      <h3>Step 5. 지점별 분포 — {{ selected_branch }} ({{ "{:,}".format(branch_scope_count) }}건)</h3>
+      <p class="caption">선택 지점 내 기번별 장애 분포</p>
+      {% if device_list.empty %}
+        <div class="alert info">선택 지점에 표시할 기번 데이터가 없습니다.</div>
+      {% else %}
+        <div class="chip-row">
+          {% for d in device_list['기번'] %}
+            <a href="{{ build_url(device=d) }}#step5" class="chip {% if d == selected_device %}active{% endif %}">{{ d }}</a>
+          {% endfor %}
+        </div>
+        <div class="grid-2">
+          <div class="chart-box">{{ device_chart|safe }}</div>
+          <div>{{ device_list.to_html(index=False, classes='data-table', border=0)|safe }}</div>
+        </div>
+      {% endif %}
+    </section>
+  {% endif %}
+
+  {% if not daily.empty %}
+    <section class="card">
+      <h3>Step 6. 일별 장애 추이 — {{ "{:,}".format(scope_count) }}건</h3>
+      <div class="chart-box">{{ daily_chart|safe }}</div>
+      {{ daily.to_html(index=False, classes='data-table', border=0)|safe }}
+    </section>
+  {% endif %}
+
+  <details class="card">
+    <summary>현재 필터 조건 요약</summary>
+    <pre>{{ summary | tojson(indent=2) }}</pre>
+  </details>
+{% endif %}
+{% endblock %}

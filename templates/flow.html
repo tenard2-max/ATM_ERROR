@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+
+{% block title %}장애다발기기분석 — 장애 다발 기기 분석{% endblock %}
+
+{% block content %}
+
+<h2>📈 장애다발기기분석</h2>
+
+<p class="caption">선택 월 · 5일 구간별 장애건수 · 이상치 · 모듈별장애분석 연계</p>
+
+
+
+{% if empty %}
+
+  <div class="alert warn">데이터가 없습니다. <a href="{{ url_for('data_manage') }}">데이터관리</a>에서 업로드하세요.</div>
+
+{% else %}
+
+  {% if nav_value %}
+
+    <div class="alert info">전체비교에서 전달: <strong>{{ nav_type }} = {{ nav_value }}</strong>{% if nav_month %} ({{ nav_month }}){% endif %}</div>
+
+  {% endif %}
+
+
+
+  <form method="get" class="inline-form card">
+
+    <fieldset>
+
+      <legend>분석 단위</legend>
+
+      {% for mode in mode_labels %}
+
+        <label><input type="radio" name="mode" value="{{ mode }}" {% if mode == selected_mode %}checked{% endif %} onchange="this.form.submit()"> {{ mode }}</label>
+
+      {% endfor %}
+
+    </fieldset>
+
+    <label>{{ selected_mode }} 선택
+
+      <select name="value" onchange="this.form.submit()">
+        {% for opt in option_items %}
+          <option value="{{ opt.value }}" {% if opt.value == selected_value %}selected{% endif %}>{{ opt.label }}</option>
+        {% endfor %}
+      </select>
+
+    </label>
+
+    <label>조회 연월
+
+      <select name="flow_month" onchange="this.form.submit()">
+
+        {% for m in entity_months %}
+
+          <option value="{{ m }}" {% if m == flow_month %}selected{% endif %}>{{ m }}</option>
+
+        {% endfor %}
+
+      </select>
+
+    </label>
+
+  </form>
+
+
+
+  {% if not flow_month %}
+
+    <div class="alert warn">선택한 대상에 대한 데이터가 없습니다.</div>
+
+  {% else %}
+
+    <div class="metrics">
+
+      <div class="metric"><span>분석 대상</span><strong>{{ selected_value }}</strong></div>
+
+      <div class="metric"><span>조회 연월</span><strong>{{ flow_month }}</strong></div>
+
+      <div class="metric"><span>해당 월 장애</span><strong>{{ "{:,}".format(month_total) }}건</strong></div>
+
+      <div class="metric"><span>누적 데이터</span><strong>{{ month_count }}개월</strong></div>
+
+    </div>
+
+
+
+    <h3>{{ flow_month }} — 5일별 장애 추이 (1·5·10·15·20·25·30일)</h3>
+
+    <div class="chart-box">{{ flow_html|safe }}</div>
+
+    {{ bucket_table_html|safe }}
+
+
+
+    {% if month_count > 1 %}
+
+      <h3>월별 누적 추이 (참고)</h3>
+
+      {{ chart_table_html|safe }}
+
+    {% endif %}
+
+
+
+    <h3>이상치·급증 탐지 및 원인 확인</h3>
+
+    {% if anomaly_message %}
+
+      <div class="alert warn">{{ anomaly_message }}</div>
+
+    {% elif anomaly_records %}
+
+      {{ anomalies_html|safe }}
+
+      {% for row in anomaly_records %}
+
+        {% set month = row['연월'] %}
+
+        {% set saved = note_map.get(month, {}) %}
+
+        <details class="card">
+
+          <summary>{{ month }} — {{ row['장애건수']|int }}건 (평소 대비 {{ "{:+.1f}".format(row['평소대비증가율']) }}%)</summary>
+
+          <form method="post">
+
+            <input type="hidden" name="action" value="save_note">
+
+            <input type="hidden" name="mode" value="{{ selected_mode }}">
+
+            <input type="hidden" name="flow_month" value="{{ flow_month }}">
+
+            <input type="hidden" name="target_type" value="{{ target_type }}">
+
+            <input type="hidden" name="key_value" value="{{ selected_value }}">
+
+            <input type="hidden" name="month" value="{{ month }}">
+
+            <label><input type="checkbox" name="confirmed" {% if saved.get('confirmed') %}checked{% endif %}> 확인 완료</label>
+
+            <textarea name="memo" rows="3" placeholder="원인 메모">{{ saved.get('memo', '') or '' }}</textarea>
+
+            <button type="submit">저장</button>
+
+          </form>
+
+        </details>
+
+      {% endfor %}
+
+    {% else %}
+
+      <div class="alert ok">탐지된 이상치가 없습니다.</div>
+
+    {% endif %}
+
+
+
+    <h3>모듈별장애분석으로 이동</h3>
+
+    <form method="post" class="inline-form card">
+
+      <input type="hidden" name="action" value="goto_code">
+
+      <label>분석할 연월
+
+        <select name="link_month">
+
+          {% for m in link_months %}
+
+            <option value="{{ m }}" {% if m == flow_month %}selected{% endif %}>{{ m }}</option>
+
+          {% endfor %}
+
+        </select>
+
+      </label>
+
+      <label>세부장애 (선택)
+
+        <select name="link_fault">
+
+          <option value="(전체)">(전체)</option>
+
+          {% for f in link_faults %}
+
+            <option value="{{ f }}">{{ f }}</option>
+
+          {% endfor %}
+
+        </select>
+
+      </label>
+
+      <button type="submit">모듈별장애분석</button>
+
+    </form>
+
+  {% endif %}
+
+{% endif %}
+
+{% endblock %}
+
