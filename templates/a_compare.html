@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}전체기기 월별비교 — 장애 다발 기기 분석{% endblock %}
+{% block content %}
+<h2>📊 전체기기 월별비교</h2>
+<p class="caption">지점별 / 기번별 / 기종별 월간 장애건수 TOP10 · Plotly 차트</p>
+
+{% if empty %}
+  <div class="alert warn">분석할 데이터가 없습니다. <a href="{{ url_for('data_manage') }}">0 데이터관리</a>에서 장애리스트를 업로드하세요.</div>
+{% else %}
+  {% set sec = sections[tab] %}
+  <form method="get" class="inline-form">
+    <label>조회 연월
+      <select name="month" onchange="this.form.submit()">
+        {% for m in months %}
+          <option value="{{ m }}" {% if m == selected_month %}selected{% endif %}>{{ m }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <input type="hidden" name="tab" value="{{ tab }}">
+    {% if tab == '지점' and sec.selected_daily %}
+      <input type="hidden" name="daily_entity" value="{{ sec.selected_daily }}">
+    {% endif %}
+  </form>
+
+  <div class="tabs">
+    {% for tab_key in sections.keys() %}
+      <a href="{{ url_for('a_compare', month=selected_month, tab=tab_key) }}"
+         class="tab {% if tab == tab_key %}active{% endif %}">{{ tab_key }}{% if tab_key != '기종' %} TOP{{ top_n }}{% endif %}</a>
+    {% endfor %}
+  </div>
+
+  {% if sec.month_data.empty %}
+    <div class="alert info">{{ selected_month }} 데이터가 없습니다.</div>
+  {% else %}
+    <div class="metrics">
+      <div class="metric"><span>표시 항목</span><strong>{{ sec.month_data|length }}개</strong></div>
+      <div class="metric"><span>합계</span><strong>{{ "{:,}".format(sec.month_data['장애건수'].sum()|int) }}건</strong></div>
+      <div class="metric"><span>최대</span><strong>{{ "{:,}".format(sec.month_data['장애건수'].max()|int) }}건</strong></div>
+    </div>
+
+    <div class="chart-box">{{ sec.chart_html|safe }}</div>
+
+    <h3>TOP 목록</h3>
+    {{ sec.table_html|safe }}
+
+    <form method="post" action="{{ url_for('goto_flow') }}" class="inline-form card">
+      <label>{{ tab }} 선택 → 장애다발기기분석
+        <select name="nav_value">
+          {% for label in sec.labels %}
+            <option value="{{ label }}">{{ label }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <input type="hidden" name="nav_type" value="{{ sec.nav_type }}">
+      <input type="hidden" name="selected_month" value="{{ selected_month }}">
+      <button type="submit">장애다발기기분석으로 이동</button>
+    </form>
+
+    {% if sec.daily_html %}
+      <h3>{{ selected_month }} 일별 장애 추이 (1일~{{ sec.last_day }}일)</h3>
+      {% if tab == '지점' and sec.daily_options %}
+        <form method="get" class="inline-form card">
+          <label>TOP{{ top_n }} 지점 선택
+            <select name="daily_entity" onchange="this.form.submit()">
+              <option value="">(전체 TOP{{ top_n }})</option>
+              {% for opt in sec.daily_options %}
+                <option value="{{ opt.value }}" {% if opt.value == sec.selected_daily %}selected{% endif %}>{{ opt.label }}</option>
+              {% endfor %}
+            </select>
+          </label>
+          <input type="hidden" name="month" value="{{ selected_month }}">
+          <input type="hidden" name="tab" value="{{ tab }}">
+        </form>
+        <p class="caption">지점을 선택하면 해당 지점 1개의 일별 추이만 표시됩니다.</p>
+      {% else %}
+        <p class="caption">상단 「조회 연월」 변경 시 해당 월의 일별 추이가 갱신됩니다.</p>
+      {% endif %}
+      <div class="chart-box">{{ sec.daily_html|safe }}</div>
+    {% endif %}
+  {% endif %}
+{% endif %}
+{% endblock %}

@@ -1,0 +1,188 @@
+{% extends "base.html" %}
+{% block title %}0 데이터관리 — 장애 다발 기기 분석{% endblock %}
+{% block content %}
+<h2>📁 데이터 관리 · 장애 분석 · 그룹핑</h2>
+
+<div class="grid-2">
+  <section class="card">
+    <h3>업로드</h3>
+    <form method="post" enctype="multipart/form-data">
+      <input type="hidden" name="action" value="upload">
+      <input type="file" name="files" accept=".xls,.xlsx" multiple>
+      <p class="caption">최대 {{ max_upload_files }}개(12개월) · .xls / .xlsx</p>
+      <button type="submit">업로드 처리</button>
+    </form>
+  </section>
+
+  <section class="card">
+    <h3>저장된 월별 데이터</h3>
+    {% if meta.empty %}
+      <p class="muted">저장된 데이터가 없습니다.</p>
+    {% else %}
+      {{ meta_html|safe }}
+      <form method="post" class="inline-form">
+        <input type="hidden" name="action" value="delete_month">
+        <select name="month">
+          {% for m in meta['연월'] %}
+            <option value="{{ m }}">{{ m }}</option>
+          {% endfor %}
+        </select>
+        <button type="submit" class="secondary">선택 월 삭제</button>
+      </form>
+    {% endif %}
+  </section>
+</div>
+
+{% if pending_rows %}
+  <section class="card alert warn">
+    <h3>중복 연월 업로드 처리</h3>
+    <form method="post">
+      <input type="hidden" name="action" value="save_pending">
+      {% for row in pending_rows %}
+        <div class="pending-row">
+          <p><strong>{{ row.연월 }}</strong>
+            {% if row.existing_filename %}
+              | DB: {{ row.existing_filename }} {{ "{:,}".format(row.existing_count) }}건
+            {% endif %}
+            → 업로드: {{ row.filename }} {{ "{:,}".format(row.upload_count) }}건
+          </p>
+          <label><input type="radio" name="pending_{{ row.filename }}" value="replace" checked> 교체</label>
+          <label><input type="radio" name="pending_{{ row.filename }}" value="append"> 추가</label>
+          <label><input type="radio" name="pending_{{ row.filename }}" value="cancel"> 취소</label>
+        </div>
+      {% endfor %}
+      <button type="submit">선택 항목 저장</button>
+    </form>
+  </section>
+{% endif %}
+
+{% if not df.empty and analysis and not analysis.empty %}
+  <section class="card">
+    <h3>1. 장애 분석</h3>
+    <form method="post" class="inline-form">
+      <input type="hidden" name="action" value="set_month">
+      <label>조회 연월
+        <select name="month" onchange="this.form.submit()">
+          {% for m in analysis.months %}
+            <option value="{{ m }}" {% if m == analysis.selected_month %}selected{% endif %}>{{ m }}</option>
+          {% endfor %}
+        </select>
+      </label>
+    </form>
+
+    {% if analysis.no_filter %}
+      <div class="alert warn">장애내용을 하나 이상 선택하세요.</div>
+    {% endif %}
+
+    <div class="filter-box">
+      <strong>장애내용 필터</strong>
+      <form method="post" class="inline-form">
+        <input type="hidden" name="month" value="{{ analysis.selected_month }}">
+        <button type="submit" name="action" value="filter_all">전체 선택</button>
+        <button type="submit" name="action" value="filter_none" class="secondary">전체 해제</button>
+      </form>
+      <form method="post">
+        <input type="hidden" name="action" value="filter_apply">
+        <input type="hidden" name="month" value="{{ analysis.selected_month }}">
+        <div class="checkbox-grid">
+          {% for opt in analysis.all_options %}
+            <label><input type="checkbox" name="fault_content" value="{{ opt }}"
+              {% if opt in analysis.selected_contents %}checked{% endif %}> {{ opt }}</label>
+          {% endfor %}
+        </div>
+        <button type="submit">필터 적용</button>
+        <span class="caption">선택 {{ analysis.selected_contents|length }} / {{ analysis.all_options|length }}개</span>
+      </form>
+    </div>
+
+    {% if not analysis.no_filter %}
+      <div class="tabs static">
+        <span class="tab active">기종별 (전체)</span>
+      </div>
+      {{ analysis.tabs['기종'].table_html|safe }}
+
+      <h4>지점 TOP10</h4>
+      {{ analysis.tabs['지점'].table_html|safe }}
+
+      <h4>기번 TOP10</h4>
+      {{ analysis.tabs['기번'].table_html|safe }}
+
+      <h4>이상치 탐지</h4>
+      {% if analysis.anomaly_message %}
+        <div class="alert warn">{{ analysis.anomaly_message }}</div>
+      {% elif analysis.anomalies_empty %}
+        <div class="alert ok">탐지된 이상치가 없습니다.</div>
+      {% else %}
+        {{ analysis.anomalies_html|safe }}
+      {% endif %}
+    {% endif %}
+  </section>
+{% endif %}
+
+{% if not df.empty and preview and not preview.empty %}
+  <section class="card">
+    <h3>2. 데이터 업로드 및 검증</h3>
+    <div class="metrics">
+      <div class="metric"><span>{{ selected_month }} 장애 건수</span><strong>{{ "{:,}".format(preview.month_count) }}</strong></div>
+      <div class="metric"><span>전체 누적</span><strong>{{ "{:,}".format(preview.total_count) }}</strong></div>
+      <div class="metric"><span>지점 수</span><strong>{{ preview.branch_count }}</strong></div>
+      <div class="metric"><span>기기 수</span><strong>{{ preview.device_count }}</strong></div>
+    </div>
+    {{ preview.table_html|safe }}
+    {% if not mapping_exists %}
+      <div class="alert warn">매핑 파일 없음: mapping/장애코드.xlsx</div>
+    {% endif %}
+  </section>
+{% elif df.empty %}
+  <div class="alert info">사이드바에서 월별 장애리스트 파일을 업로드하세요.</div>
+{% endif %}
+
+<section class="card">
+  <h3>3. 장애코드분류</h3>
+  <form method="post">
+    <input type="hidden" name="action" value="grouping_run">
+    <button type="submit">AI 그룹핑 실행</button>
+  </form>
+
+  {% if not grouping_records %}
+    <p class="muted">「AI 그룹핑 실행」으로 유형 분류 초안을 생성하세요.</p>
+  {% else %}
+    <form method="post">
+      <input type="hidden" name="action" value="grouping_confirm">
+      <table class="data-table">
+        <thead>
+          <tr><th>장애코드2</th><th>세부장애</th><th>장애내용</th><th>AI 유형</th><th>확정 유형</th></tr>
+        </thead>
+        <tbody>
+          {% for row in grouping_records %}
+            <tr>
+              <td>{{ row['장애코드2'] }}</td>
+              <td>
+                {% if row.get('세부장애목록') %}
+                  <ul class="detail-list">
+                    {% for detail in row['세부장애목록'] %}
+                      <li>{{ detail }}</li>
+                    {% endfor %}
+                  </ul>
+                {% else %}
+                  {{ row['세부장애'] }}
+                {% endif %}
+              </td>
+              <td>{{ row['장애내용'] }}</td>
+              <td>{{ row['ai_type'] }}</td>
+              <td>
+                <select name="type_{{ row['장애코드2'] }}">
+                  {% for ft in fault_types %}
+                    <option value="{{ ft }}" {% if row['confirmed_type'] == ft %}selected{% endif %}>{{ ft }}</option>
+                  {% endfor %}
+                </select>
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <button type="submit">장애코드변경 저장</button>
+    </form>
+  {% endif %}
+</section>
+{% endblock %}

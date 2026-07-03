@@ -1,0 +1,20 @@
+.env
+venv/
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+data/
+.streamlit/secrets.toml
+
+# 실운영 장애 Excel (GitHub 공개 금지)
+5월장애_분석.xlsx
+5월장애_분석.xls
+2026년5월장애_분석.xlsx
+
+# 로컬 검증 출력
+scripts/verify_result.txt
+
+# 기타
+ErrMsg.mdb
+*.mdb

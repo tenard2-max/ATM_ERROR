@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% block title %}중점장애관리 — 장애 다발 기기 분석{% endblock %}
+{% block content %}
+<h2>🎯 중점장애관리</h2>
+<p class="caption">점검이 필요한 기기를 위험도 순으로 추천 (최근3개월 40% · 증가율 30% · 이상치 20% · 기종편차 10%)</p>
+
+{% if empty %}
+  <div class="alert warn">데이터가 없습니다. <a href="{{ url_for('data_manage') }}">0 데이터관리</a>에서 업로드하세요.</div>
+{% elif ranked_records|length == 0 %}
+  <div class="alert info">우선순위를 계산할 데이터가 없습니다.</div>
+{% else %}
+  <form method="get" class="inline-form">
+    <label>표시 TOP N
+      <input type="range" name="top_n" min="5" max="50" step="5" value="{{ top_n }}" onchange="this.form.submit()">
+      <span>{{ top_n }}</span>
+    </label>
+  </form>
+
+  <h3>위험도 TOP {{ ranked_records|length }}</h3>
+  {{ ranked_html|safe }}
+  <div class="chart-box">{{ chart_html|safe }}</div>
+
+  <section class="card">
+    <h3>점검 대상 → 장애다발기기분석 / 모듈별장애분석 이동</h3>
+    <form method="post" class="inline-form">
+      <label>점검 대상 기번
+        <select name="device">
+          {% for row in ranked_records %}
+            <option value="{{ row['기번'] }}">{{ row['기번'] }} (위험도 {{ "{:.1f}".format(row['위험도점수']) }})</option>
+          {% endfor %}
+        </select>
+      </label>
+      <button type="submit" name="action" value="goto_flow">장애다발기기분석으로 이동</button>
+      <button type="submit" name="action" value="goto_code" class="secondary">모듈별장애분석으로 이동</button>
+    </form>
+  </section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}장애 다발 기기 분석{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <h1>🏧 장애 다발 기기 분석</h1>
+      <p class="subtitle">로컬 실행 · {{ app_url }}</p>
+    </div>
+  </header>
+
+  <nav class="main-nav">
+    <div class="wrap nav-grid">
+      {% for item in nav_items %}
+        <a href="{{ url_for(item.endpoint) }}"
+           class="nav-tile nav-{{ item.tone }}{% if request.endpoint == item.endpoint %} active{% endif %}">
+          {{ item.label }}
+        </a>
+      {% endfor %}
+    </div>
+  </nav>
+
+  <aside class="api-panel wrap">
+    <form method="post" action="{{ url_for('save_api_key') }}" class="api-form">
+      <strong>Gemini API</strong>
+      {% if api_key_set %}
+        <span class="badge ok">설정됨: {{ api_key_masked }}</span>
+      {% else %}
+        <span class="badge warn">미설정 — AI 그룹핑은 규칙 폴백</span>
+      {% endif %}
+      <input type="password" name="api_key" placeholder="GEMINI_API_KEY 입력">
+      <button type="submit" name="action" value="save">저장</button>
+      {% if api_key_set %}
+        <button type="submit" name="action" value="delete" class="secondary">삭제</button>
+      {% endif %}
+    </form>
+  </aside>
+
+  <main class="wrap">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div class="flash-wrap">
+          {% for category, message in messages %}
+            <div class="flash {{ category }}">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    {% block content %}{% endblock %}
+  </main>
+</body>
+</html>
